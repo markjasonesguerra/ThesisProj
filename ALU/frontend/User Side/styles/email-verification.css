@@ -1,0 +1,60 @@
+:root{
+  --primary-1: #2563eb;
+  --primary-2: #1d4ed8;
+  --muted: #6b7280;
+  --card-bg: rgba(255,255,255,0.98);
+  --border: rgba(15,23,42,0.06);
+}
+
+/* Re-use auth card layout but fine-tune for verification */
+.email-verification-page .verify-email-card{
+  margin-top:12px;
+  display:flex;
+  flex-direction:column;
+  gap:14px;
+  align-items:center;
+}
+
+.email-verification-page .verify-email-to{
+  width:100%;
+  padding:12px 14px;
+  border-radius:10px;
+  background:linear-gradient(180deg, rgba(37,99,235,0.03), rgba(99,102,241,0.02));
+  border:1px solid rgba(37,99,235,0.06);
+  color:var(--muted);
+  font-size:14px;
+  text-align:center;
+}
+
+.email-verification-page .verify-code-inputs{
+  display:flex;
+  gap:10px;
+  margin-top:6px;
+}
+
+.email-verification-page .verify-input{
+  width:52px;
+  height:64px;
+  border-radius:12px;
+  border:1px solid var(--border);
+  background:linear-gradient(180deg,#fff,#fbfdff);
+  font-size:28px;
+  text-align:center;
+  outline:none;
+  box-shadow: 0 6px 18px rgba(15,23,42,0.06);
+}
+.email-verification-page .verify-input:focus{ border-color: rgba(37,99,235,0.35); box-shadow: 0 12px 28px rgba(37,99,235,0.10); }
+
+.email-verification-page button.button--primary{ margin-top:10px; width:100%; padding:12px 14px; border-radius:12px }
+
+.email-verification-page .resend{ margin-top:8px }
+.email-verification-page .button--link{ background:transparent; border:none; color:var(--primary-1); font-weight:700; cursor:pointer }
+.email-verification-page .button--outline{ background:transparent; border:1px solid var(--border); padding:8px 12px; border-radius:8px }
+
+/* helper note area */
+.email-verification-page .demo-note{ display:none; }
+
+@media (max-width:480px){
+  .email-verification-page .verify-input{ width:44px; height:52px; font-size:22px }
+  .email-verification-page .auth-card{ padding:22px }
+}

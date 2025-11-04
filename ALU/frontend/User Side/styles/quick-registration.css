@@ -1,0 +1,79 @@
+:root{
+  --card-bg: rgba(255,255,255,0.98);
+  --primary-1: #2563eb;
+  --primary-2: #1d4ed8;
+  --muted: #6b7280;
+  --border: rgba(15,23,42,0.06);
+  --glass: rgba(255,255,255,0.6);
+}
+
+/* Page layout */
+.quick-registration-page{
+  min-height:100vh;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:48px 16px;
+  background: radial-gradient(1200px 600px at 10% 10%, rgba(37,99,235,0.06), transparent 12%), radial-gradient(1000px 500px at 90% 90%, rgba(99,102,241,0.04), transparent 10%), linear-gradient(180deg,#f8fafc,#ffffff 40%);
+}
+.quick-registration-page .auth-card{
+  width:100%;
+  max-width:520px;
+  background:var(--card-bg);
+  border-radius:18px;
+  padding:36px 36px 28px;
+  box-shadow: 0 20px 40px rgba(15,23,42,0.10), inset 0 1px 0 rgba(255,255,255,0.6);
+  border:1px solid var(--border);
+  transition: transform .18s ease, box-shadow .18s ease;
+}
+.quick-registration-page .auth-card:hover{ transform: translateY(-4px); box-shadow: 0 28px 56px rgba(15,23,42,0.14); }
+
+.quick-registration-page .auth-back{
+  background:transparent;
+  border:none;
+  color:var(--muted);
+  display:inline-flex;
+  align-items:center;
+  gap:8px;
+  font-weight:600;
+  cursor:pointer;
+}
+.quick-registration-page .auth-icon{
+  width:74px;
+  height:74px;
+  border-radius:20px;
+  margin:8px auto 0;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-size:30px;
+  color:#fff;
+  background:linear-gradient(135deg,var(--primary-1),var(--primary-2));
+  box-shadow: 0 10px 24px rgba(37,99,235,0.14);
+}
+
+.quick-registration-page .auth-card h1{ text-align:center; margin:8px 0 0; font-size:20px; }
+.quick-registration-page .auth-card .muted{ text-align:center; color:var(--muted); font-size:13px; margin-top:4px }
+
+.quick-registration-page .form-grid{ display:grid; grid-template-columns:1fr; gap:12px; margin-top:14px }
+
+.quick-registration-page .form-field{ display:flex; flex-direction:column; gap:8px; }
+.quick-registration-page .form-field span{ font-weight:600; color:#0f172a; font-size:13px }
+.quick-registration-page .form-field input{ padding:12px 14px; border-radius:10px; border:1px solid rgba(15,23,42,0.06); outline:none; font-size:14px; transition: box-shadow .12s ease, border-color .12s ease; background:linear-gradient(180deg, #fff, #fbfdff); }
+.quick-registration-page .form-field input:focus{ box-shadow:0 8px 20px rgba(37,99,235,0.08); border-color: rgba(37,99,235,0.35); }
+
+.quick-registration-page .form-field--checkbox{ flex-direction:row; align-items:center; gap:10px }
+.quick-registration-page .form-field--checkbox input{ width:16px; height:16px }
+
+.quick-registration-page .form-actions{ display:flex; justify-content:center; margin-top:6px }
+.quick-registration-page .button{ padding:12px 18px; border-radius:12px; border:none; font-weight:700; cursor:pointer }
+.quick-registration-page .button--primary{ background:linear-gradient(90deg,var(--primary-1),var(--primary-2)); color:#fff; box-shadow: 0 12px 30px rgba(29,78,216,0.18); }
+.quick-registration-page .button--primary:disabled{ opacity:0.55; cursor:not-allowed; }
+
+.quick-registration-page .card-note{ margin-top:16px; background:linear-gradient(180deg, rgba(37,99,235,0.03), rgba(99,102,241,0.02)); border-radius:10px; padding:12px; color:var(--muted); font-size:13px }
+.quick-registration-page .card-note ul{ margin:8px 0 0; padding-left:18px }
+
+@media (max-width:520px){
+  .quick-registration-page .auth-card{ padding:22px; border-radius:14px }
+  .quick-registration-page .auth-icon{ width:64px; height:64px }
+}

@@ -36,6 +36,20 @@ app.use((err, _req, res, _next) => {
 const start = async () => {
   try {
     await pool.query('SELECT 1');
+    // ensure email_verifications table exists for quick registration flow
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS email_verifications (
+        id INT PRIMARY KEY AUTO_INCREMENT,
+        email VARCHAR(255) NOT NULL,
+        code VARCHAR(16) NOT NULL,
+        expires_at DATETIME NOT NULL,
+        used TINYINT(1) DEFAULT 0,
+        verified_at DATETIME NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY uq_email (email),
+        INDEX (code)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    `);
     app.listen(PORT, () => {
       console.log(`API server ready at http://localhost:${PORT}`);
     });

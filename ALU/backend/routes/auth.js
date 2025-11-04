@@ -1,9 +1,47 @@
 import express from 'express';
 import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
+import nodemailer from 'nodemailer';
 import { pool } from '../db.js';
 import { normalizeString, normalizeNumber, generateDigitalId, sanitizeUser, SALT_ROUNDS, mapUserRow } from '../utils.js';
 
 const router = express.Router();
+
+// setup mail transporter if SMTP config is present
+const smtpConfigured = Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
+let transporter = null;
+if (smtpConfigured) {
+  transporter = nodemailer.createTransport({
+    host: process.env.SMTP_HOST,
+    port: Number(process.env.SMTP_PORT ?? 587),
+    secure: Boolean(Number(process.env.SMTP_SECURE ?? 0)),
+    auth: {
+      user: process.env.SMTP_USER,
+      pass: process.env.SMTP_PASS,
+    },
+  });
+}
+
+const sendVerificationEmail = async (email, code) => {
+  const from = process.env.SMTP_FROM ?? 'no-reply@example.com';
+  const subject = 'Your verification code';
+  const text = `Your verification code is: ${code}`;
+  const html = `<p>Your verification code is: <strong>${code}</strong></p>`;
+
+  if (transporter) {
+    try {
+      await transporter.sendMail({ from, to: email, subject, text, html });
+      return true;
+    } catch (err) {
+      console.error('Failed sending mail:', err.message);
+      return false;
+    }
+  }
+
+  // fallback: log to console for development
+  console.log(`Verification code for ${email}: ${code}`);
+  return true;
+};
 
 router.post('/register', async (req, res) => {
   const {
@@ -141,6 +179,112 @@ router.post('/register', async (req, res) => {
   } catch (error) {
     await connection.rollback();
     res.status(500).json({ message: 'Registration failed.', error: error.message });
+  } finally {
+    connection.release();
+  }
+});
+
+// quick registration: send a 6-digit code to the provided email
+router.post('/quick-register', async (req, res) => {
+  const { email, firstName, lastName } = req.body ?? {};
+  if (!normalizeString(email)) return res.status(400).json({ message: 'Email is required.' });
+
+  try {
+    // check if a user already exists with password (complete account)
+    const [existing] = await pool.query('SELECT id, password_hash FROM users WHERE email = ? LIMIT 1', [email]);
+    if (existing.length && existing[0].password_hash) {
+      return res.status(409).json({ message: 'An account with that email already exists.' });
+    }
+
+    const code = crypto.randomInt(100000, 999999).toString();
+    const expiresAt = new Date(Date.now() + (Number(process.env.VERIFICATION_TTL_MS ?? 15 * 60 * 1000))).toISOString().slice(0, 19).replace('T', ' ');
+
+    // upsert verification record
+    await pool.query(
+      `INSERT INTO email_verifications (email, code, expires_at, used)
+       VALUES (?, ?, ?, 0)
+       ON DUPLICATE KEY UPDATE code = VALUES(code), expires_at = VALUES(expires_at), used = 0, verified_at = NULL, created_at = CURRENT_TIMESTAMP`,
+      [email, code, expiresAt],
+    );
+
+    await sendVerificationEmail(email, code);
+    return res.json({ message: 'Verification code sent.' });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ message: 'Failed to send verification code.' });
+  }
+});
+
+// verify code
+router.post('/verify-code', async (req, res) => {
+  const { email, code } = req.body ?? {};
+  if (!normalizeString(email) || !normalizeString(code)) return res.status(400).json({ message: 'Email and code are required.' });
+
+  try {
+    const [rows] = await pool.query(
+      'SELECT id, code, expires_at, used FROM email_verifications WHERE email = ? LIMIT 1',
+      [email],
+    );
+    if (!rows.length) return res.status(400).json({ message: 'No verification requested for that email.' });
+
+    const row = rows[0];
+    if (row.used) return res.status(400).json({ message: 'Code already used.' });
+    if (String(row.code) !== String(code)) return res.status(400).json({ message: 'Invalid code.' });
+    const now = new Date();
+    if (new Date(row.expires_at) < now) return res.status(400).json({ message: 'Code expired.' });
+
+    await pool.query('UPDATE email_verifications SET used = 1, verified_at = ? WHERE id = ?', [new Date(), row.id]);
+    return res.json({ message: 'Verified.' });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ message: 'Verification failed.' });
+  }
+});
+
+// set password after verification (creates minimal user if not exists)
+router.post('/set-password', async (req, res) => {
+  const { email, password, firstName, lastName } = req.body ?? {};
+  if (!normalizeString(email) || !normalizeString(password)) return res.status(400).json({ message: 'Email and password are required.' });
+
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+
+    // ensure verified within TTL (used=1 and verified_at not null)
+    const [verRows] = await connection.query(
+      'SELECT id, verified_at FROM email_verifications WHERE email = ? AND used = 1 LIMIT 1',
+      [email],
+    );
+    if (!verRows.length) {
+      await connection.rollback();
+      return res.status(400).json({ message: 'Email not verified.' });
+    }
+
+    // upsert user entry
+    const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
+
+    const [existing] = await connection.query('SELECT id FROM users WHERE email = ? LIMIT 1', [email]);
+    let userId = null;
+    if (existing.length) {
+      userId = existing[0].id;
+      await connection.query('UPDATE users SET password_hash = ? WHERE id = ?', [passwordHash, userId]);
+    } else {
+      const membershipDate = new Date();
+      const digitalId = generateDigitalId(null);
+      const [result] = await connection.query(
+        `INSERT INTO users (first_name, last_name, email, password_hash, membership_date, digital_id, is_approved)
+         VALUES (?, ?, ?, ?, ?, ?, 0)`,
+        [normalizeString(firstName) ?? null, normalizeString(lastName) ?? null, normalizeString(email), passwordHash, membershipDate, digitalId],
+      );
+      userId = result.insertId;
+    }
+
+    await connection.commit();
+    return res.json({ message: 'Password set.', id: userId });
+  } catch (err) {
+    await connection.rollback();
+    console.error(err);
+    return res.status(500).json({ message: 'Failed to set password.' });
   } finally {
     connection.release();
   }

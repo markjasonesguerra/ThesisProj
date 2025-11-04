@@ -2,7 +2,8 @@ import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate, useOutle
 import { useMemo, useState } from 'react';
 import LandingPage from '@userPages/LandingPage.jsx';
 import LoginPage from '@userPages/LoginPage.jsx';
-import RegistrationPage from '@userPages/RegistrationPage.jsx';
+import QuickRegistrationPage from '@userPages/QuickRegistrationPage.jsx';
+import EmailVerificationPage from '@userPages/EmailVerificationPage.jsx';
 import RegistrationSuccessPage from '@userPages/RegistrationSuccessPage.jsx';
 import PasswordSetupPage from '@userPages/PasswordSetupPage.jsx';
 import DashboardPage from '@userPages/DashboardPage.jsx';
@@ -29,7 +30,7 @@ import EventManagement from '@adminPages/EventManagement.jsx';
 import IDCardManagement from '@adminPages/IDCardManagement.jsx';
 import MemberProfile from '@adminPages/MemberProfile.jsx';
 import AdminSettings from '@adminPages/AdminSettings.jsx';
-import { submitMembershipApplication } from './api/auth';
+// (membership application API still available if needed)
 import { mockUser, mockDues, mockNotifications, mockNews } from './data/mockData';
 
 function Protected({ isAuthenticated, children }) {
@@ -113,40 +114,43 @@ function App() {
     );
   };
 
+  // quick registration flow: quick form -> email verification -> password setup
+  const [pendingReg, setPendingReg] = useState(null);
+
   const RegistrationRoute = () => {
     const navigate = useNavigate();
-    const [submission, setSubmission] = useState({ loading: false, error: '' });
 
-    const handleSubmit = async (form) => {
-      if (submission.loading) return;
-      setSubmission({ loading: true, error: '' });
-
-      try {
-        const response = await submitMembershipApplication(form);
-        const { id, digitalId } = response.data ?? {};
-        const membershipDate = new Date().toISOString();
-        setUser({
-          ...mockUser,
-          ...form,
-          id: id ?? mockUser.id,
-          digitalId: digitalId ?? mockUser.digitalId,
-          membershipDate,
-          isApproved: false,
-        });
-        setSubmission({ loading: false, error: '' });
-        navigate('/registration-success');
-      } catch (error) {
-        const message = error?.response?.data?.message ?? 'Unable to submit registration. Please try again.';
-        setSubmission({ loading: false, error: message });
-      }
+    const handleNext = (data) => {
+      // store pending registration (client-side). In a full implementation you'd send a verification email.
+      setPendingReg(data);
+      navigate('/verify-email');
     };
 
     return (
-      <RegistrationPage
+      <QuickRegistrationPage
         onBack={() => navigate('/')}
-        onSubmit={handleSubmit}
-        submitting={submission.loading}
-        submitError={submission.error}
+        onNext={handleNext}
+      />
+    );
+  };
+
+  const VerifyRoute = () => {
+    const navigate = useNavigate();
+    if (!pendingReg) {
+      navigate('/register');
+      return null;
+    }
+
+    return (
+      <EmailVerificationPage
+        email={pendingReg.email}
+        onBack={() => navigate('/register')}
+        onResend={() => {/* TODO: call API to resend code */}}
+        onVerify={() => {
+          // after verification, set a provisional user (will complete on password setup)
+          setUser((u) => ({ ...(u ?? {}), email: pendingReg.email, firstName: pendingReg.firstName, lastName: pendingReg.lastName }));
+          navigate('/password-setup');
+        }}
       />
     );
   };
@@ -185,7 +189,8 @@ function App() {
       <Routes>
         <Route path="/" element={<LandingRoute />} />
         <Route path="/login" element={<LoginRoute />} />
-        <Route path="/register" element={<RegistrationRoute />} />
+  <Route path="/register" element={<RegistrationRoute />} />
+  <Route path="/verify-email" element={<VerifyRoute />} />
         <Route path="/registration-success" element={<RegistrationSuccessRoute />} />
         <Route path="/password-setup" element={<PasswordSetupRoute />} />
         <Route
