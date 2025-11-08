@@ -19,6 +19,7 @@ import "../styles/admin-base.css";
 import { mockMembers } from "./mockData";
 import { mockAITickets } from "../components/ai/mockAiData";
 import { getAdminMember } from "../../src/api/admin";
+import client from "../../src/api/client";
 
 const formatDate = (value, options) => {
   if (!value) return "—";
@@ -38,6 +39,26 @@ const defaultDocuments = [
   { name: "Employment Certificate", type: "Employment", uploadedAt: "2025-01-10" },
   { name: "Union Membership Form", type: "Membership", uploadedAt: "2024-12-01" },
 ];
+
+const paymentStatusTone = {
+  Cleared: "is-green",
+  Pending: "is-orange",
+  Overdue: "is-red",
+};
+
+const resolveFileBaseUrl = () => {
+  const base = process.env.REACT_APP_FILE_BASE_URL ?? client?.defaults?.baseURL;
+  if (!base) return "";
+  return base.replace(/\/$/, "");
+};
+
+const resolveDocumentUrl = (path) => {
+  if (!path) return null;
+  if (/^https?:\/\//i.test(path)) return path;
+  const base = resolveFileBaseUrl();
+  if (!base) return null;
+  return `${base}/${String(path).replace(/^\/+/, "")}`;
+};
 
 export default function MemberProfile() {
   const { memberId } = useParams();
@@ -141,6 +162,7 @@ export default function MemberProfile() {
 
   const paymentHistory = member.paymentHistory ?? defaultPayments;
   const documents = member.documents ?? defaultDocuments;
+  const fileBaseUrl = resolveFileBaseUrl();
 
   return (
     <div className="admin-page admin-stack-lg">
@@ -341,7 +363,11 @@ export default function MemberProfile() {
                       <td>{formatDate(payment.date)}</td>
                       <td>{payment.amount}</td>
                       <td>{payment.method}</td>
-                      <td>{payment.status}</td>
+                      <td>
+                        <span className={`admin-pill ${paymentStatusTone[payment.status] ?? ""}`.trim()}>
+                          {payment.status}
+                        </span>
+                      </td>
                     </tr>
                   ))}
                   {paymentHistory.length === 0 ? (
@@ -369,17 +395,46 @@ export default function MemberProfile() {
           </div>
         </header>
         <div className="admin-detail-grid">
-          {documents.map((doc) => (
-            <article key={doc.name} className="admin-card">
-              <div className="admin-card__label">{doc.type}</div>
-              <div className="admin-card__value" style={{ fontSize: "18px" }}>{doc.name}</div>
-              <div className="admin-card__meta">Uploaded {formatDate(doc.uploadedAt)}</div>
-              <div className="admin-pill-group">
-                <span className="admin-pill">View</span>
-                <span className="admin-pill">Download</span>
-              </div>
-            </article>
-          ))}
+          {documents.map((doc) => {
+            const docUrl = resolveDocumentUrl(doc.filePath);
+            return (
+              <article key={doc.name} className="admin-card">
+                <div className="admin-card__label">{doc.type}</div>
+                <div className="admin-card__value" style={{ fontSize: "18px" }}>{doc.name}</div>
+                <div className="admin-card__meta">
+                  Uploaded {formatDate(doc.uploadedAt)}
+                  {doc.status ? ` • ${doc.status}` : ""}
+                </div>
+                <div className="admin-pill-group">
+                  <button
+                    type="button"
+                    className="admin-button admin-button--ghost"
+                    onClick={() => {
+                      if (docUrl) window.open(docUrl, "_blank", "noopener,noreferrer");
+                    }}
+                    disabled={!docUrl}
+                  >
+                    View
+                  </button>
+                  <button
+                    type="button"
+                    className="admin-button admin-button--ghost"
+                    onClick={() => {
+                      if (docUrl) window.open(docUrl, "_blank", "noopener,noreferrer");
+                    }}
+                    disabled={!docUrl}
+                  >
+                    Download
+                  </button>
+                </div>
+                {!fileBaseUrl && doc.filePath ? (
+                  <p className="admin-muted" style={{ fontSize: "12px" }}>
+                    File path: {doc.filePath}
+                  </p>
+                ) : null}
+              </article>
+            );
+          })}
           {documents.length === 0 ? (
             <div className="admin-empty-state">No documents uploaded.</div>
           ) : null}

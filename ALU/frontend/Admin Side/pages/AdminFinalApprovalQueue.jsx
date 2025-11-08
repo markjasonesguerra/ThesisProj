@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   CheckCircle,
   XCircle,
@@ -7,74 +7,63 @@ import {
   Send,
 } from "lucide-react";
 import "../styles/admin-base.css";
-
-const approvalItems = [
-  {
-    id: "1",
-    ticketId: "TCK-2025-0123",
-    member: "member-1973-ALU",
-    category: "Medical Assistance",
-    proponent: "Dr. Ana Rodriguez",
-    proponentRole: "Medical Program Director",
-    aiConfidence: 0.91,
-    timeSince: "2 hours ago",
-    status: "Pending Final Approval",
-  },
-  {
-    id: "2",
-    ticketId: "TCK-2025-0127",
-    member: "member-4521-ALU",
-    category: "Legal Consultation",
-    proponent: "Atty. Carlos Mendoza",
-    proponentRole: "Legal Affairs Head",
-    aiConfidence: 0.78,
-    timeSince: "4 hours ago",
-    status: "Pending Final Approval",
-  },
-  {
-    id: "3",
-    ticketId: "TCK-2025-0119",
-    member: "member-5024-ALU",
-    category: "Financial Assistance",
-    proponent: "Maria Gomez",
-    proponentRole: "Benefits Coordinator",
-    aiConfidence: 0.66,
-    timeSince: "6 hours ago",
-    status: "Returned to Proponent",
-  },
-  {
-    id: "4",
-    ticketId: "TCK-2025-0111",
-    member: "member-6520-ALU",
-    category: "Grievance Response",
-    proponent: "Josefina Ramos",
-    proponentRole: "Industrial Relations",
-    aiConfidence: 0.83,
-    timeSince: "8 hours ago",
-    status: "Approved & Sent",
-  },
-];
-
-const statusTone = {
-  "Pending Final Approval": "is-orange",
-  "Approved & Sent": "is-green",
-  Rejected: "is-red",
-  "Returned to Proponent": "is-blue",
-};
+import client from "../../src/api/client";
 
 export default function AdminFinalApprovalQueue() {
+  const [items, setItems] = useState([]);
+  const [stats, setStats] = useState({ pendingFinal: 0, approvedToday: 0, returned: 0, rejected: 0 });
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  const computeTime = (value, fallback) => {
+    if (fallback) return fallback;
+    if (!value) return "";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "";
+    const diffMs = Date.now() - date.getTime();
+    const minute = 60 * 1000;
+    const hour = 60 * minute;
+    const day = 24 * hour;
+    if (diffMs < hour) {
+      const minutes = Math.max(1, Math.round(diffMs / minute));
+      return `${minutes} minute${minutes === 1 ? "" : "s"} ago`;
+    }
+    if (diffMs < day) {
+      const hours = Math.round(diffMs / hour);
+      return `${hours} hour${hours === 1 ? "" : "s"} ago`;
+    }
+    const days = Math.round(diffMs / day);
+    return `${days} day${days === 1 ? "" : "s"} ago`;
+  };
+
+  const loadQueue = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const response = await client.get("/api/admin/approvals/final-queue");
+      setItems(response.data?.items ?? []);
+      setStats(response.data?.stats ?? {});
+    } catch (err) {
+      setError(err?.response?.data?.message ?? "Unable to load approval queue.");
+      setItems([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadQueue();
+  }, []);
+
   const pending = useMemo(
-    () => approvalItems.filter((item) => item.status === "Pending Final Approval"),
-    [],
+    () => items.filter((item) => item.status === "Pending Final Approval"),
+    [items],
   );
 
-  const approvedToday = approvalItems.filter(
-    (item) => item.status === "Approved & Sent",
-  ).length;
-  const returned = approvalItems.filter(
-    (item) => item.status === "Returned to Proponent",
-  ).length;
-  const rejected = approvalItems.filter((item) => item.status === "Rejected").length;
+  const pendingCount = stats.pendingFinal ?? pending.length;
+  const approvedToday = stats.approvedToday ?? items.filter((item) => item.status === "Approved & Sent").length;
+  const returned = stats.returned ?? items.filter((item) => item.status === "Returned to Proponent").length;
+  const rejected = stats.rejected ?? items.filter((item) => item.status === "Rejected").length;
 
   return (
     <div className="admin-page">
@@ -87,17 +76,23 @@ export default function AdminFinalApprovalQueue() {
           </p>
         </div>
         <div className="admin-actions">
-          <button type="button" className="admin-button">
-            <RefreshCcw size={16} /> Refresh Data
+          <button type="button" className="admin-button" onClick={loadQueue} disabled={loading}>
+            <RefreshCcw size={16} /> {loading ? "Refreshing" : "Refresh Data"}
           </button>
         </div>
       </header>
+
+      {error ? (
+        <section className="admin-surface">
+          <div className="admin-empty-state">{error}</div>
+        </section>
+      ) : null}
 
       <section className="admin-card-grid cols-4">
         <article className="admin-card">
           <div className="admin-card__label">Pending Final Approval</div>
           <div className="admin-row" style={{ gap: "10px" }}>
-            <div className="admin-card__value">{pending.length}</div>
+            <div className="admin-card__value">{pendingCount}</div>
             <span className="admin-chip is-orange">
               <Clock size={16} /> Queue
             </span>
@@ -160,7 +155,7 @@ export default function AdminFinalApprovalQueue() {
               </tr>
             </thead>
             <tbody>
-              {approvalItems.map((item) => (
+              {items.map((item) => (
                 <tr key={item.id}>
                   <td style={{ fontWeight: 600 }}>{item.ticketId}</td>
                   <td>{item.member}</td>
@@ -180,14 +175,28 @@ export default function AdminFinalApprovalQueue() {
                       {Math.round(item.aiConfidence * 100)}% match
                     </div>
                   </td>
-                  <td>{item.timeSince}</td>
+                  <td>{computeTime(item.updatedAt, item.timeSince)}</td>
                   <td>
-                    <span className={statusTone[item.status] || "admin-chip"}>
+                    <span className={item.tone ? `admin-chip ${item.tone}` : "admin-chip"}>
                       {item.status}
                     </span>
                   </td>
                 </tr>
               ))}
+              {!loading && items.length === 0 ? (
+                <tr>
+                  <td colSpan={7}>
+                    <div className="admin-empty-state">No items in the final approval queue.</div>
+                  </td>
+                </tr>
+              ) : null}
+              {loading ? (
+                <tr>
+                  <td colSpan={7}>
+                    <div className="admin-empty-state">Loading queue…</div>
+                  </td>
+                </tr>
+              ) : null}
             </tbody>
           </table>
         </div>

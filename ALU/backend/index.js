@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import { pool } from './db.js';
 import authRouter from './routes/auth.js';
 import usersRouter from './routes/users.js';
+import adminRouter from './routes/adminroutes/admin.js';
 
 dotenv.config();
 
@@ -19,6 +20,7 @@ app.use(express.json({ limit: '5mb' }));
 // mount routers
 app.use('/api/auth', authRouter);
 app.use('/api/users', usersRouter);
+app.use('/api/admin', adminRouter);
 
 app.get('/api/health', async (_req, res) => {
   try {

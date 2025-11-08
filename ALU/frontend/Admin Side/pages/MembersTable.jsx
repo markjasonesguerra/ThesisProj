@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import PropTypes from "prop-types";
 import {
   Search,
@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import "../styles/admin-base.css";
-import { mockMembers, mockCompanies, mockUnions } from "./mockData";
+import client from "../../src/api/client";
 
 const pageSize = 8;
 
@@ -32,28 +32,20 @@ const duesToneMap = {
   Pending: "is-orange",
 };
 
-function filterMembers(source, { query, company, union, status }) {
-  return source.filter((member) => {
-    const matchesQuery =
-      !query ||
-      member.fullName.toLowerCase().includes(query) ||
-      member.memberID.toLowerCase().includes(query) ||
-      member.email.toLowerCase().includes(query);
-
-    const matchesCompany = !company || member.company === company;
-    const matchesUnion = !union || member.unionAffiliation === union;
-    const matchesStatus = !status || member.status === status;
-
-    return matchesQuery && matchesCompany && matchesUnion && matchesStatus;
-  });
-}
-
 export default function MembersTable({ initialMembers }) {
   const [query, setQuery] = useState("");
   const [company, setCompany] = useState("");
   const [union, setUnion] = useState("");
   const [status, setStatus] = useState("");
   const [page, setPage] = useState(1);
+  const [members, setMembers] = useState(initialMembers ?? []);
+  const [metadata, setMetadata] = useState({
+    total: initialMembers?.length ?? 0,
+    pageCount: 1,
+    filters: { companies: [], unions: [], statuses: [] },
+  });
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
   const [openMenuId, setOpenMenuId] = useState(null);
   const navigate = useNavigate();
 
@@ -68,20 +60,62 @@ export default function MembersTable({ initialMembers }) {
     return () => document.removeEventListener("click", handleClickOutside);
   }, []);
 
-  const members = useMemo(() => {
-    const dataset = initialMembers?.length ? initialMembers : mockMembers;
-    const normalizedQuery = query.trim().toLowerCase();
-    return filterMembers(dataset, {
-      query: normalizedQuery,
-      company,
-      union,
-      status,
-    });
-  }, [initialMembers, query, company, union, status]);
+  useEffect(() => {
+    let subscribed = true;
 
-  const pageCount = Math.max(1, Math.ceil(members.length / pageSize));
-  const start = (page - 1) * pageSize;
-  const currentPageItems = members.slice(start, start + pageSize);
+    const fetchMembers = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        const response = await client.get("/api/admin/members", {
+          params: {
+            page,
+            pageSize,
+            query: query || undefined,
+            company: company || undefined,
+            union: union || undefined,
+            status: status || undefined,
+          },
+        });
+        if (!subscribed) return;
+        const nextMembers = response.data?.results ?? [];
+        const nextMetadata = response.data?.metadata ?? {};
+        setMembers(nextMembers);
+        setMetadata(nextMetadata);
+        const nextPageCount = Math.max(1, nextMetadata.pageCount ?? 1);
+        if (page > nextPageCount) {
+          setPage(nextPageCount);
+        }
+      } catch (err) {
+        if (!subscribed) return;
+        setError(err?.response?.data?.message ?? "Unable to load members.");
+        setMembers([]);
+      } finally {
+        if (subscribed) {
+          setLoading(false);
+        }
+      }
+    };
+
+    fetchMembers();
+    return () => {
+      subscribed = false;
+    };
+  }, [page, query, company, union, status]);
+
+  const pageCount = Math.max(1, metadata.pageCount ?? 1);
+  const totalMembers = metadata.total ?? members.length;
+  const showing = members.length;
+
+  const companies = metadata.filters?.companies ?? [];
+  const unions = metadata.filters?.unions ?? [];
+  const statuses = metadata.filters?.statuses ?? [
+    "Active",
+    "Pending Review",
+    "Approved",
+    "Inactive",
+    "Rejected",
+  ];
 
   const handleViewProfile = (member) => {
     setOpenMenuId(null);
@@ -165,7 +199,7 @@ export default function MembersTable({ initialMembers }) {
             }}
           >
             <option value="">Company (All)</option>
-            {mockCompanies.map((item) => (
+            {companies.map((item) => (
               <option key={item} value={item}>
                 {item}
               </option>
@@ -181,7 +215,7 @@ export default function MembersTable({ initialMembers }) {
             }}
           >
             <option value="">Union (All)</option>
-            {mockUnions.map((item) => (
+            {unions.map((item) => (
               <option key={item} value={item}>
                 {item}
               </option>
@@ -197,13 +231,7 @@ export default function MembersTable({ initialMembers }) {
             }}
           >
             <option value="">Status (All)</option>
-            {[
-              "Active",
-              "Pending Review",
-              "Approved",
-              "Inactive",
-              "Rejected",
-            ].map((item) => (
+            {statuses.map((item) => (
               <option key={item} value={item}>
                 {item}
               </option>
@@ -214,9 +242,13 @@ export default function MembersTable({ initialMembers }) {
 
       <section className="admin-surface">
         <div className="admin-row">
-          <h2>Members ({members.length})</h2>
-          <span className="admin-pill">Showing {currentPageItems.length} records</span>
+          <h2>Members ({totalMembers})</h2>
+          <span className="admin-pill">Showing {showing} records</span>
         </div>
+
+        {error ? (
+          <div className="admin-empty-state">{error}</div>
+        ) : null}
 
         <div className="admin-scroll">
           <table className="admin-table">
@@ -234,16 +266,17 @@ export default function MembersTable({ initialMembers }) {
               </tr>
             </thead>
             <tbody>
-              {currentPageItems.map((member) => (
+              {members.map((member) => (
                 <tr key={member.id}>
                   <td style={{ fontWeight: 600 }}>{member.memberID}</td>
                   <td>
                     <div className="admin-row" style={{ gap: "10px" }}>
                       <span className="admin-avatar">
-                        {member.fullName
+                        {(member.fullName ?? "")
                           .split(" ")
+                          .filter(Boolean)
                           .map((name) => name[0])
-                          .join("")}
+                          .join("") || "?"}
                       </span>
                       <div>
                         <div style={{ fontWeight: 600 }}>{member.fullName}</div>
@@ -274,7 +307,11 @@ export default function MembersTable({ initialMembers }) {
                     </span>
                   </td>
                   <td>{member.idStatus}</td>
-                  <td>{new Date(member.registeredDate).toLocaleDateString()}</td>
+                  <td>
+                    {member.registeredDate
+                      ? new Date(member.registeredDate).toLocaleDateString()
+                      : "—"}
+                  </td>
                   <td>
                     <div className="admin-row-actions">
                       <button
@@ -305,7 +342,7 @@ export default function MembersTable({ initialMembers }) {
                   </td>
                 </tr>
               ))}
-              {currentPageItems.length === 0 && (
+              {!loading && members.length === 0 && (
                 <tr>
                   <td colSpan={9}>
                     <div className="admin-empty-state">
@@ -315,6 +352,13 @@ export default function MembersTable({ initialMembers }) {
                   </td>
                 </tr>
               )}
+              {loading ? (
+                <tr>
+                  <td colSpan={9}>
+                    <div className="admin-empty-state">Loading members…</div>
+                  </td>
+                </tr>
+              ) : null}
             </tbody>
           </table>
         </div>

@@ -1,13 +1,15 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
   Building2,
   Calendar,
+  Copy,
   Check,
   CheckCircle2,
   ChevronRight,
   Clock,
   Download,
+  ExternalLink,
   Eye,
   FileText,
   Mail,
@@ -18,126 +20,7 @@ import {
   X,
 } from "lucide-react";
 import "../styles/admin-base.css";
-
-const pendingRegistrations = [
-  {
-    id: "REG-2024-001",
-    fullName: "Maria Santos",
-    email: "maria.santos@sm.com.ph",
-    phone: "+63 917 234 5678",
-    company: "SM Investments Corporation",
-    department: "Human Resources",
-    position: "Assistant Manager",
-    unionAffiliation: "SM Workers Union",
-    submittedDate: "2024-09-20",
-    status: "Pending Review",
-    priority: "Normal",
-    duplicateFlag: false,
-    address: "Makati City, Metro Manila",
-    yearsEmployed: 5,
-    membershipType: "Regular",
-    payrollConsent: true,
-    idPhoto: "1.3 MB • JPG",
-    employmentCertificate: "0.9 MB • PDF",
-    unionForm: "1.1 MB • PDF",
-    validationChecks: {
-      emailValid: true,
-      phoneValid: true,
-      documentsComplete: true,
-      companyVerified: true,
-      noDuplicates: true,
-    },
-    riskNotes: [
-      "AI confidence score: 0.92 (low risk)",
-      "Employment verified via payroll API",
-      "All documents submitted within SLAs",
-    ],
-    timeline: [
-      { time: "Sep 20, 9:14 AM", detail: "Registration submitted by member" },
-      { time: "Sep 20, 9:16 AM", detail: "AI pre-screen passed" },
-      { time: "Sep 20, 9:24 AM", detail: "Payroll consent confirmed" },
-      { time: "Sep 20, 10:01 AM", detail: "Queued for admin review" },
-    ],
-  },
-  {
-    id: "REG-2024-002",
-    fullName: "Carlos Mendoza",
-    email: "carlos.mendoza@ayala.com.ph",
-    phone: "+63 918 765 4321",
-    company: "Ayala Corporation",
-    department: "Finance",
-    position: "Senior Analyst",
-    unionAffiliation: "Ayala Employees Association",
-    submittedDate: "2024-09-19",
-    status: "Under Review",
-    priority: "High",
-    duplicateFlag: true,
-    address: "Quezon City, Metro Manila",
-    yearsEmployed: 7,
-    membershipType: "Regular",
-    payrollConsent: false,
-    idPhoto: "1.1 MB • JPG",
-    employmentCertificate: "—",
-    unionForm: "0.8 MB • PDF",
-    validationChecks: {
-      emailValid: true,
-      phoneValid: true,
-      documentsComplete: false,
-      companyVerified: true,
-      noDuplicates: false,
-    },
-    riskNotes: [
-      "Potential duplicate detected: ALU-2023-0156",
-      "Payroll consent missing – requires manual follow-up",
-      "Employment certificate not uploaded",
-    ],
-    timeline: [
-      { time: "Sep 19, 8:42 AM", detail: "Registration submitted by member" },
-      { time: "Sep 19, 8:50 AM", detail: "AI flagged missing documentation" },
-      { time: "Sep 19, 9:15 AM", detail: "Duplicate detected: similar email domain" },
-      { time: "Sep 19, 10:30 AM", detail: "Awaiting manual verification" },
-    ],
-  },
-  {
-    id: "REG-2024-003",
-    fullName: "Lisa Rodriguez",
-    email: "lisa.rodriguez@jollibee.com.ph",
-    phone: "+63 917 555 7788",
-    company: "Jollibee Foods Corporation",
-    department: "Operations",
-    position: "Store Manager",
-    unionAffiliation: "Fast Food Workers Union",
-    submittedDate: "2024-09-18",
-    status: "Pending Review",
-    priority: "Normal",
-    duplicateFlag: false,
-    address: "Pasig City, Metro Manila",
-    yearsEmployed: 3,
-    membershipType: "Associate",
-    payrollConsent: true,
-    idPhoto: "1.0 MB • JPG",
-    employmentCertificate: "1.2 MB • PDF",
-    unionForm: "0.9 MB • PDF",
-    validationChecks: {
-      emailValid: true,
-      phoneValid: false,
-      documentsComplete: true,
-      companyVerified: true,
-      noDuplicates: true,
-    },
-    riskNotes: [
-      "Phone number flagged – verification SMS bounced",
-      "All documents submitted and signed",
-      "Payroll consent confirmed",
-    ],
-    timeline: [
-      { time: "Sep 18, 7:40 AM", detail: "Registration submitted by member" },
-      { time: "Sep 18, 7:46 AM", detail: "AI flagged invalid phone format" },
-      { time: "Sep 18, 8:05 AM", detail: "Email verification completed" },
-      { time: "Sep 18, 9:22 AM", detail: "Awaiting contact correction" },
-    ],
-  },
-];
+import client from "../../src/api/client";
 
 const rejectionReasons = [
   "Incomplete documentation",
@@ -149,26 +32,134 @@ const rejectionReasons = [
   "Other (specify below)",
 ];
 
+const defaultSummary = {
+  totalPending: 0,
+  highPriority: 0,
+  duplicates: 0,
+  docIssues: 0,
+};
+
 export default function RegistrationReview() {
-  const [selectedId, setSelectedId] = useState(pendingRegistrations[0]?.id ?? null);
+  const [queue, setQueue] = useState([]);
+  const [summary, setSummary] = useState(defaultSummary);
+  const [selectedId, setSelectedId] = useState(null);
   const [activeTab, setActiveTab] = useState("details");
   const [showApproveDialog, setShowApproveDialog] = useState(false);
   const [showRejectDialog, setShowRejectDialog] = useState(false);
   const [rejectionReason, setRejectionReason] = useState(rejectionReasons[0]);
   const [customReason, setCustomReason] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [previewDocument, setPreviewDocument] = useState(null);
+  const [copyStatus, setCopyStatus] = useState("");
+
+  useEffect(() => {
+    let subscribed = true;
+
+    const fetchQueue = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        const response = await client.get("/api/admin/registrations/review");
+        if (!subscribed) return;
+        const nextQueue = response.data?.queue ?? [];
+        setQueue(nextQueue);
+        setSummary(response.data?.summary ?? defaultSummary);
+        setSelectedId(nextQueue[0]?.id ?? null);
+      } catch (err) {
+        if (!subscribed) return;
+        setError(err?.response?.data?.message ?? "Unable to load registration queue.");
+        setQueue([]);
+        setSummary(defaultSummary);
+        setSelectedId(null);
+      } finally {
+        if (subscribed) {
+          setLoading(false);
+        }
+      }
+    };
+
+    fetchQueue();
+    return () => {
+      subscribed = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!queue.length) {
+      setSelectedId(null);
+      return;
+    }
+    if (!selectedId || !queue.some((entry) => entry.id === selectedId)) {
+      setSelectedId(queue[0].id);
+      setActiveTab("details");
+    }
+  }, [queue, selectedId]);
+
+  useEffect(() => {
+    setPreviewDocument(null);
+    setCopyStatus("");
+  }, [selectedId]);
 
   const selectedRegistration = useMemo(
-    () => pendingRegistrations.find((entry) => entry.id === selectedId),
-    [selectedId],
+    () => queue.find((entry) => entry.id === selectedId) ?? null,
+    [queue, selectedId],
   );
 
-  const summary = useMemo(() => {
-    const totalPending = pendingRegistrations.length;
-    const highPriority = pendingRegistrations.filter((entry) => entry.priority === "High").length;
-    const duplicates = pendingRegistrations.filter((entry) => entry.duplicateFlag).length;
-    const docIssues = pendingRegistrations.filter((entry) => !entry.validationChecks.documentsComplete).length;
-    return { totalPending, highPriority, duplicates, docIssues };
-  }, []);
+  const documentFiles = selectedRegistration?.documentFiles ?? [];
+
+  const overview = useMemo(() => {
+    const computed = {
+      totalPending: queue.length,
+      highPriority: queue.filter((entry) => entry.priority === "High").length,
+      duplicates: queue.filter((entry) => entry.duplicateFlag).length,
+      docIssues: queue.filter((entry) => !(entry.validationChecks?.documentsComplete)).length,
+    };
+    return {
+      totalPending: summary?.totalPending ?? computed.totalPending,
+      highPriority: summary?.highPriority ?? computed.highPriority,
+      duplicates: summary?.duplicates ?? computed.duplicates,
+      docIssues: summary?.docIssues ?? computed.docIssues,
+    };
+  }, [queue, summary]);
+
+  const formatDate = (value) => {
+    if (!value) return "--";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return value;
+    return date.toLocaleDateString("en-US", {
+      month: "short",
+      day: "2-digit",
+      year: "numeric",
+    });
+  };
+
+  const formatDateTime = (value) => {
+    if (!value) return "--";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return value;
+    return date.toLocaleString("en-US", {
+      month: "short",
+      day: "2-digit",
+      year: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    });
+  };
+
+  const getInitials = (value) => {
+    if (!value) return "?";
+    return (
+      value
+        .split(" ")
+        .filter(Boolean)
+        .map((part) => part[0])
+        .join("")
+        .slice(0, 2)
+        .toUpperCase() || "?"
+    );
+  };
 
   const resetRejectionForm = () => {
     setRejectionReason(rejectionReasons[0]);
@@ -183,6 +174,66 @@ export default function RegistrationReview() {
     setShowRejectDialog(false);
     resetRejectionForm();
   };
+
+  const fileBaseUrl = (() => {
+    if (typeof process.env.REACT_APP_FILE_BASE_URL === "string") {
+      return process.env.REACT_APP_FILE_BASE_URL.replace(/\/$/, "");
+    }
+    const apiBase = client?.defaults?.baseURL;
+    if (typeof apiBase === "string") {
+      return apiBase.replace(/\/$/, "");
+    }
+    return "";
+  })();
+
+  const resolveDocumentUrl = (path) => {
+    if (!path) return null;
+    if (/^https?:\/\//i.test(path)) {
+      return path;
+    }
+    if (!fileBaseUrl) {
+      return null;
+    }
+    const sanitizedPath = String(path).replace(/^\/+/, "");
+    return `${fileBaseUrl}/${sanitizedPath}`;
+  };
+
+  const handleDocumentView = (doc) => {
+    if (!doc?.filePath) return;
+    const url = resolveDocumentUrl(doc.filePath);
+    if (url) {
+      window.open(url, "_blank", "noopener,noreferrer");
+      return;
+    }
+    setPreviewDocument({ ...doc, action: "view" });
+  };
+
+  const handleDocumentDownload = (doc) => {
+    if (!doc?.filePath) return;
+    const url = resolveDocumentUrl(doc.filePath);
+    if (url) {
+      window.open(url, "_blank", "noopener,noreferrer");
+      return;
+    }
+    setPreviewDocument({ ...doc, action: "download" });
+  };
+
+  const handleCopyDocumentPath = async (path) => {
+    if (!path) return;
+    try {
+      if (!navigator?.clipboard?.writeText) {
+        setCopyStatus("Clipboard access not available.");
+        return;
+      }
+      await navigator.clipboard.writeText(path);
+      setCopyStatus("Copied to clipboard");
+      setTimeout(() => setCopyStatus(""), 1500);
+    } catch (clipboardError) {
+      setCopyStatus("Unable to copy. Please copy manually.");
+    }
+  };
+
+  const previewUrl = previewDocument ? resolveDocumentUrl(previewDocument.filePath) : null;
 
   const renderValidationRow = (label, valid) => (
     <div className="admin-validation-row" key={label}>
@@ -200,7 +251,7 @@ export default function RegistrationReview() {
         <div>
           <h1>Registration Review</h1>
           <p className="admin-muted">
-            Review and approve pending member registrations ({summary.totalPending} waiting in queue).
+            Review and approve pending member registrations ({overview.totalPending} waiting in queue).
           </p>
         </div>
         <div className="admin-actions">
@@ -213,25 +264,31 @@ export default function RegistrationReview() {
         </div>
       </header>
 
+      {error ? (
+        <section className="admin-surface">
+          <div className="admin-empty-state">{error}</div>
+        </section>
+      ) : null}
+
       <section className="admin-card-grid cols-4">
         <article className="admin-card">
           <div className="admin-card__label">Pending approvals</div>
-          <div className="admin-card__value">{summary.totalPending}</div>
+          <div className="admin-card__value">{overview.totalPending}</div>
           <div className="admin-card__meta">AI pre-screen suggests 6 fast track</div>
         </article>
         <article className="admin-card">
           <div className="admin-card__label">High risk cases</div>
-          <div className="admin-card__value">{summary.highPriority}</div>
+          <div className="admin-card__value">{overview.highPriority}</div>
           <div className="admin-card__meta">Need manual verification</div>
         </article>
         <article className="admin-card">
           <div className="admin-card__label">Potential duplicates</div>
-          <div className="admin-card__value">{summary.duplicates}</div>
+          <div className="admin-card__value">{overview.duplicates}</div>
           <div className="admin-card__meta">Auto-matched via email + employer</div>
         </article>
         <article className="admin-card">
           <div className="admin-card__label">Incomplete documents</div>
-          <div className="admin-card__value">{summary.docIssues}</div>
+          <div className="admin-card__value">{overview.docIssues}</div>
           <div className="admin-card__meta">AI flagged missing uploads</div>
         </article>
       </section>
@@ -245,8 +302,16 @@ export default function RegistrationReview() {
             </span>
           </div>
           <div className="admin-queue__list">
-            {pendingRegistrations.map((registration) => {
+            {queue.map((registration) => {
               const isActive = registration.id === selectedId;
+              const initials = getInitials(registration.fullName);
+              const priorityTone =
+                registration.priority === "High"
+                  ? "is-red"
+                  : registration.priority === "Normal"
+                  ? "is-blue"
+                  : "is-purple";
+              const documentsComplete = registration.validationChecks?.documentsComplete;
               return (
                 <button
                   type="button"
@@ -259,33 +324,18 @@ export default function RegistrationReview() {
                 >
                   <div className="admin-queue__item-header">
                     <div className="admin-queue__identity">
-                      <div className="admin-avatar admin-avatar--sm">
-                        {registration.fullName
-                          .split(" ")
-                          .map((n) => n[0])
-                          .join("")
-                          .slice(0, 2)
-                          .toUpperCase()}
-                      </div>
+                      <div className="admin-avatar admin-avatar--sm">{initials}</div>
                       <div>
                         <p className="admin-queue__name">{registration.fullName}</p>
-                        <p className="admin-muted">{registration.company}</p>
+                        <p className="admin-muted">{registration.company || "Company not set"}</p>
                       </div>
                     </div>
-                    <span
-                      className={`admin-badge ${
-                        registration.priority === "High"
-                          ? "is-red"
-                          : registration.priority === "Normal"
-                          ? "is-blue"
-                          : "is-purple"
-                      }`}
-                    >
+                    <span className={`admin-badge ${priorityTone}`}>
                       {registration.priority}
                     </span>
                   </div>
                   <div className="admin-queue__meta">
-                    <span>{registration.submittedDate}</span>
+                    <span>{formatDate(registration.submittedDate)}</span>
                     <span>{registration.status}</span>
                   </div>
                   <div className="admin-queue__flags">
@@ -294,7 +344,7 @@ export default function RegistrationReview() {
                         <AlertTriangle size={14} /> Duplicate warning
                       </span>
                     ) : null}
-                    {!registration.validationChecks.documentsComplete ? (
+                    {documentsComplete === false ? (
                       <span className="admin-chip is-red">
                         <FileText size={14} /> Document issue
                       </span>
@@ -303,6 +353,10 @@ export default function RegistrationReview() {
                 </button>
               );
             })}
+            {!loading && !queue.length ? (
+              <div className="admin-empty-state">No registrations waiting in the queue.</div>
+            ) : null}
+            {loading ? <div className="admin-empty-state">Loading queue...</div> : null}
           </div>
         </aside>
 
@@ -312,25 +366,20 @@ export default function RegistrationReview() {
               <header className="admin-registration-detail__header">
                 <div className="admin-registration-detail__identity">
                   <div className="admin-avatar admin-avatar--lg">
-                    {selectedRegistration.fullName
-                      .split(" ")
-                      .map((n) => n[0])
-                      .join("")
-                      .slice(0, 2)
-                      .toUpperCase()}
+                    {getInitials(selectedRegistration?.fullName)}
                   </div>
                   <div>
                     <h2>{selectedRegistration.fullName}</h2>
-                    <p className="admin-muted">{selectedRegistration.email}</p>
+                    <p className="admin-muted">{selectedRegistration.email ?? "Email not provided"}</p>
                     <div className="admin-inline-list">
                       <span>
-                        <Phone size={14} /> {selectedRegistration.phone}
+                        <Phone size={14} /> {selectedRegistration.phone ?? "Not provided"}
                       </span>
                       <span>
-                        <Building2 size={14} /> {selectedRegistration.company}
+                        <Building2 size={14} /> {selectedRegistration.company ?? "Company not set"}
                       </span>
                       <span>
-                        <MapPin size={14} /> {selectedRegistration.address}
+                        <MapPin size={14} /> {selectedRegistration.address ?? "Address unavailable"}
                       </span>
                     </div>
                   </div>
@@ -383,19 +432,19 @@ export default function RegistrationReview() {
                         </div>
                         <div className="admin-stat">
                           <span>Position</span>
-                          <span>{selectedRegistration.position}</span>
+                          <span>{selectedRegistration.position ?? "Not provided"}</span>
                         </div>
                         <div className="admin-stat">
                           <span>Department</span>
-                          <span>{selectedRegistration.department}</span>
+                          <span>{selectedRegistration.department ?? "Not provided"}</span>
                         </div>
                         <div className="admin-stat">
                           <span>Union affiliation</span>
-                          <span>{selectedRegistration.unionAffiliation}</span>
+                          <span>{selectedRegistration.unionAffiliation ?? "Not provided"}</span>
                         </div>
                         <div className="admin-stat">
                           <span>Membership type</span>
-                          <span>{selectedRegistration.membershipType}</span>
+                          <span>{selectedRegistration.membershipType ?? "Not specified"}</span>
                         </div>
                       </article>
 
@@ -405,19 +454,25 @@ export default function RegistrationReview() {
                         </div>
                         <div className="admin-stat">
                           <span>Payroll consent</span>
-                          <span>{selectedRegistration.payrollConsent ? "Confirmed" : "Missing"}</span>
+                          <span>
+                            {selectedRegistration?.payrollConsent === true
+                              ? "Confirmed"
+                              : selectedRegistration?.payrollConsent === false
+                              ? "Missing"
+                              : "Not captured"}
+                          </span>
                         </div>
                         <div className="admin-stat">
                           <span>Years employed</span>
-                          <span>{selectedRegistration.yearsEmployed}</span>
+                          <span>{selectedRegistration.yearsEmployed ?? "Not provided"}</span>
                         </div>
                         <div className="admin-stat">
                           <span>Submitted</span>
-                          <span>{selectedRegistration.submittedDate}</span>
+                          <span>{formatDate(selectedRegistration.submittedDate)}</span>
                         </div>
                         <div className="admin-stat">
                           <span>Status</span>
-                          <span>{selectedRegistration.status}</span>
+                          <span>{selectedRegistration.status ?? "Pending Review"}</span>
                         </div>
                       </article>
 
@@ -426,8 +481,11 @@ export default function RegistrationReview() {
                           <Clock size={16} /> Activity timeline
                         </div>
                         <div className="admin-timeline">
-                          {selectedRegistration.timeline.map((item) => (
-                            <div key={`${selectedRegistration.id}-${item.time}`} className="admin-timeline__item">
+                          {(selectedRegistration?.timeline ?? []).map((item, index) => (
+                            <div
+                              key={`${selectedRegistration?.id ?? index}-${item.time ?? index}`}
+                              className="admin-timeline__item"
+                            >
                               <span>{item.time}</span>
                               <p>{item.detail}</p>
                             </div>
@@ -440,7 +498,7 @@ export default function RegistrationReview() {
                           <AlertTriangle size={16} /> Risk notes
                         </div>
                         <ul className="admin-list">
-                          {selectedRegistration.riskNotes.map((note) => (
+                          {(selectedRegistration?.riskNotes ?? []).map((note) => (
                             <li key={note}>{note}</li>
                           ))}
                         </ul>
@@ -468,19 +526,25 @@ export default function RegistrationReview() {
                         <div className="admin-card__label">
                           <CheckCircle2 size={16} /> Validation checks
                         </div>
-                        {renderValidationRow("Email address valid", selectedRegistration.validationChecks.emailValid)}
-                        {renderValidationRow("Phone number valid", selectedRegistration.validationChecks.phoneValid)}
+                        {renderValidationRow(
+                          "Email address valid",
+                          selectedRegistration?.validationChecks?.emailValid ?? false,
+                        )}
+                        {renderValidationRow(
+                          "Phone number valid",
+                          selectedRegistration?.validationChecks?.phoneValid ?? false,
+                        )}
                         {renderValidationRow(
                           "Documents complete",
-                          selectedRegistration.validationChecks.documentsComplete,
+                          selectedRegistration?.validationChecks?.documentsComplete ?? false,
                         )}
                         {renderValidationRow(
                           "Company verified",
-                          selectedRegistration.validationChecks.companyVerified,
+                          selectedRegistration?.validationChecks?.companyVerified ?? false,
                         )}
                         {renderValidationRow(
                           "No duplicate conflicts",
-                          selectedRegistration.validationChecks.noDuplicates,
+                          selectedRegistration?.validationChecks?.noDuplicates ?? false,
                         )}
                       </article>
 
@@ -511,54 +575,39 @@ export default function RegistrationReview() {
 
                   {activeTab === "documents" ? (
                     <div className="admin-documents-grid">
-                      <article className="admin-card admin-stack-sm">
-                        <div className="admin-card__label">
-                          <FileText size={16} /> Registration form
-                        </div>
-                        <p className="admin-muted">{selectedRegistration.unionForm}</p>
-                        <div className="admin-row">
-                          <button type="button" className="admin-button admin-button--ghost">
-                            <Eye size={14} /> View form
-                          </button>
-                          <button type="button" className="admin-button admin-button--ghost">
-                            <Download size={14} /> Download
-                          </button>
-                        </div>
-                      </article>
-
-                      <article className="admin-card admin-stack-sm">
-                        <div className="admin-card__label">
-                          <FileText size={16} /> Employment certificate
-                        </div>
-                        <p className="admin-muted">
-                          {selectedRegistration.employmentCertificate !== "—"
-                            ? selectedRegistration.employmentCertificate
-                            : "Missing upload"}
-                        </p>
-                        <div className="admin-row">
-                          <button type="button" className="admin-button admin-button--ghost" disabled>
-                            <Eye size={14} /> View
-                          </button>
-                          <button type="button" className="admin-button admin-button--ghost" disabled>
-                            <Download size={14} /> Download
-                          </button>
-                        </div>
-                      </article>
-
-                      <article className="admin-card admin-stack-sm">
-                        <div className="admin-card__label">
-                          <FileText size={16} /> ID photo
-                        </div>
-                        <p className="admin-muted">{selectedRegistration.idPhoto}</p>
-                        <div className="admin-row">
-                          <button type="button" className="admin-button admin-button--ghost">
-                            <Eye size={14} /> View photo
-                          </button>
-                          <button type="button" className="admin-button admin-button--ghost">
-                            <Download size={14} /> Download
-                          </button>
-                        </div>
-                      </article>
+                      {documentFiles.length ? (
+                        documentFiles.map((doc) => {
+                          const isAvailable = Boolean(doc.filePath);
+                          return (
+                            <article key={doc.key} className="admin-card admin-stack-sm">
+                              <div className="admin-card__label">
+                                <FileText size={16} /> {doc.label}
+                              </div>
+                              <p className="admin-muted">{doc.status}</p>
+                              <div className="admin-row">
+                                <button
+                                  type="button"
+                                  className="admin-button admin-button--ghost"
+                                  onClick={() => handleDocumentView(doc)}
+                                  disabled={!isAvailable}
+                                >
+                                  <Eye size={14} /> View
+                                </button>
+                                <button
+                                  type="button"
+                                  className="admin-button admin-button--ghost"
+                                  onClick={() => handleDocumentDownload(doc)}
+                                  disabled={!isAvailable}
+                                >
+                                  <Download size={14} /> Download
+                                </button>
+                              </div>
+                            </article>
+                          );
+                        })
+                      ) : (
+                        <div className="admin-empty-state">No document metadata available.</div>
+                      )}
                     </div>
                   ) : null}
                 </div>
@@ -653,7 +702,7 @@ export default function RegistrationReview() {
                     rows={4}
                     value={customReason}
                     onChange={(event) => setCustomReason(event.target.value)}
-                    placeholder="Please specify the reason for rejection…"
+                    placeholder="Please specify the reason for rejection..."
                   />
                 </label>
               ) : null}
@@ -664,6 +713,71 @@ export default function RegistrationReview() {
               </button>
               <button type="button" className="admin-button is-danger" onClick={handleReject}>
                 Reject registration
+              </button>
+            </footer>
+          </div>
+        </div>
+      ) : null}
+
+      {previewDocument ? (
+        <div className="admin-dialog" role="dialog" aria-modal="true">
+          <div className="admin-dialog__backdrop" onClick={() => setPreviewDocument(null)} />
+          <div className="admin-dialog__panel">
+            <header className="admin-dialog__header">
+              <h3>{previewDocument.label}</h3>
+            </header>
+            <div className="admin-dialog__body admin-stack-md">
+              <div>
+                <strong>Stored path</strong>
+                <p className="admin-muted">{previewDocument.filePath ?? "Not available"}</p>
+              </div>
+              <div>
+                <strong>Verification status</strong>
+                <p className="admin-muted">
+                  {previewDocument.verifiedAt
+                    ? `Verified ${formatDateTime(previewDocument.verifiedAt)}`
+                    : "Pending admin verification"}
+                </p>
+              </div>
+              <div>
+                <strong>Source</strong>
+                <p className="admin-muted">
+                  {previewDocument.source === "user_documents"
+                    ? "Uploaded via user documents"
+                    : previewDocument.source === "registration_forms"
+                    ? "Provided in registration form"
+                    : "Unknown source"}
+                </p>
+              </div>
+              {copyStatus ? <div className="admin-callout is-info">{copyStatus}</div> : null}
+            </div>
+            <footer className="admin-dialog__footer">
+              <button
+                type="button"
+                className="admin-button admin-button--ghost"
+                onClick={() => handleCopyDocumentPath(previewDocument.filePath)}
+                disabled={!previewDocument.filePath}
+              >
+                <Copy size={14} /> Copy path
+              </button>
+              <button
+                type="button"
+                className="admin-button admin-button--ghost"
+                onClick={() => {
+                  if (previewUrl) {
+                    window.open(previewUrl, "_blank", "noopener,noreferrer");
+                  }
+                }}
+                disabled={!previewUrl}
+              >
+                <ExternalLink size={14} /> Open in new tab
+              </button>
+              <button
+                type="button"
+                className="admin-button"
+                onClick={() => setPreviewDocument(null)}
+              >
+                Close
               </button>
             </footer>
           </div>

@@ -1,3 +1,4 @@
+import { useEffect, useMemo, useState } from "react";
 import PropTypes from "prop-types";
 import {
   Users,
@@ -9,98 +10,8 @@ import {
   AlertTriangle,
   TrendingUp,
 } from "lucide-react";
+import client from "../../src/api/client";
 import "../styles/admin-base.css";
-
-const kpiData = [
-  {
-    title: "Total Members",
-    value: "19,247",
-    change: "+124 this month",
-    icon: Users,
-    tone: "is-blue",
-  },
-  {
-    title: "Pending Registrations",
-    value: "47",
-    change: "Requires review",
-    icon: UserCheck,
-    tone: "is-orange",
-  },
-  {
-    title: "Active Members",
-    value: "18,203",
-    change: "94.6% active rate",
-    icon: TrendingUp,
-    tone: "is-green",
-  },
-  {
-    title: "Dues Overdue",
-    value: "1,832",
-    change: "9.5% of total",
-    icon: AlertTriangle,
-    tone: "is-red",
-  },
-  {
-    title: "ID Issuance Queue",
-    value: "156",
-    change: "Processing time: 2-3 days",
-    icon: CreditCard,
-    tone: "is-purple",
-  },
-  {
-    title: "Card Requests",
-    value: "89",
-    change: "23 paid, 66 pending",
-    icon: FileText,
-    tone: "is-blue",
-  },
-];
-
-const quickActions = [
-  { label: "Approve Registrations", action: "registration-review", count: 47 },
-  { label: "Bulk Import Excel", action: "members", count: null },
-  { label: "Reconcile Dues", action: "dues-finance", count: 23 },
-  { label: "Export Reports", action: "reports-analytics", count: null },
-];
-
-const recentActivity = [
-  {
-    action: "Member Registration Approved",
-    member: "Juan dela Cruz - BDO Makati",
-    time: "5 minutes ago",
-    tone: "is-green",
-  },
-  {
-    action: "Bulk Payment Imported",
-    member: "47 payments from Metrobank",
-    time: "1 hour ago",
-    tone: "is-blue",
-  },
-  {
-    action: "ID Cards Printed",
-    member: "Batch #2024-001 (25 cards)",
-    time: "2 hours ago",
-    tone: "is-purple",
-  },
-  {
-    action: "Member Registration Submitted",
-    member: "Maria Santos - SM Corp",
-    time: "3 hours ago",
-    tone: "is-orange",
-  },
-  {
-    action: "Assistance Request",
-    member: "Legal consultation - Pedro Reyes",
-    time: "4 hours ago",
-    tone: "is-red",
-  },
-];
-
-const systemStatus = [
-  { label: "Database Health", value: 98, accent: "is-green" },
-  { label: "API Response Time", value: 142, unit: "ms", accent: "is-green" },
-  { label: "Storage Usage", value: 67, accent: "is-orange" },
-];
 
 const badgeClassByTone = {
   "is-green": "admin-chip is-green",
@@ -111,11 +22,94 @@ const badgeClassByTone = {
 };
 
 export default function Dashboard({ onNavigate }) {
+  const [dashboardData, setDashboardData] = useState({
+    kpis: [],
+    quickActions: [],
+    recentActivity: [],
+    systemStatus: [],
+  });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  const iconMap = useMemo(
+    () => ({
+      users: Users,
+      "user-check": UserCheck,
+      "trending-up": TrendingUp,
+      "alert-triangle": AlertTriangle,
+      "credit-card": CreditCard,
+      "file-text": FileText,
+      clock: Clock,
+      "dollar-sign": DollarSign,
+    }),
+    [],
+  );
+
   const navigate = (target) => {
     if (typeof onNavigate === "function") {
       onNavigate(target);
     }
   };
+
+  useEffect(() => {
+    let subscribed = true;
+
+    const fetchData = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        const response = await client.get("/api/admin/dashboard");
+        if (subscribed) {
+          setDashboardData(response.data ?? {});
+        }
+      } catch (err) {
+        if (subscribed) {
+          setError(err?.response?.data?.message ?? "Unable to load dashboard data.");
+        }
+      } finally {
+        if (subscribed) {
+          setLoading(false);
+        }
+      }
+    };
+
+    fetchData();
+    const intervalId = setInterval(fetchData, 5 * 60 * 1000);
+
+    return () => {
+      subscribed = false;
+      clearInterval(intervalId);
+    };
+  }, []);
+
+  const formatNumber = (value) => {
+    if (value === null || value === undefined) return "0";
+    if (typeof value === "string") return value;
+    return new Intl.NumberFormat("en-PH").format(value);
+  };
+
+  const computeTime = (timestamp, fallback) => {
+    if (fallback) return fallback;
+    if (!timestamp) return "";
+    const date = new Date(timestamp);
+    if (Number.isNaN(date.getTime())) return "";
+    const diffMs = Date.now() - date.getTime();
+    const minute = 60 * 1000;
+    const hour = 60 * minute;
+    const day = 24 * hour;
+    if (diffMs < hour) {
+      const minutes = Math.max(1, Math.round(diffMs / minute));
+      return `${minutes} minute${minutes === 1 ? "" : "s"} ago`;
+    }
+    if (diffMs < day) {
+      const hours = Math.round(diffMs / hour);
+      return `${hours} hour${hours === 1 ? "" : "s"} ago`;
+    }
+    const days = Math.round(diffMs / day);
+    return `${days} day${days === 1 ? "" : "s"} ago`;
+  };
+
+  const { kpis = [], quickActions = [], recentActivity = [], systemStatus = [] } = dashboardData;
 
   return (
     <div className="admin-page">
@@ -145,16 +139,25 @@ export default function Dashboard({ onNavigate }) {
         </div>
       </header>
 
+      {error ? (
+        <section className="admin-surface">
+          <div className="admin-empty-state">{error}</div>
+        </section>
+      ) : null}
+
       <section className="admin-surface">
-        <h2>Key Metrics</h2>
+        <div className="admin-row" style={{ alignItems: "center" }}>
+          <h2>Key Metrics</h2>
+          {loading ? <span className="admin-pill">Loading…</span> : null}
+        </div>
         <div className="admin-card-grid cols-3">
-          {kpiData.map((item) => {
-            const Icon = item.icon;
+          {kpis.map((item) => {
+            const Icon = iconMap[item.icon] ?? Users;
             return (
-              <article key={item.title} className="admin-card">
+              <article key={item.id ?? item.title} className="admin-card">
                 <div className="admin-card__label">{item.title}</div>
                 <div className="admin-row" style={{ gap: "12px" }}>
-                  <div className="admin-card__value">{item.value}</div>
+                  <div className="admin-card__value">{formatNumber(item.value)}</div>
                   <span className={badgeClassByTone[item.tone] || "admin-chip"}>
                     <Icon size={18} />
                   </span>
@@ -163,6 +166,12 @@ export default function Dashboard({ onNavigate }) {
               </article>
             );
           })}
+          {!loading && kpis.length === 0 ? (
+            <article className="admin-card" style={{ gridColumn: "1 / -1", textAlign: "center" }}>
+              <div className="admin-card__label">No data</div>
+              <div className="admin-card__meta">Add members or dues entries to see insights.</div>
+            </article>
+          ) : null}
         </div>
       </section>
 
@@ -182,32 +191,45 @@ export default function Dashboard({ onNavigate }) {
               >
                 <div style={{ flex: 1, textAlign: "left" }}>{action.label}</div>
                 {typeof action.count === "number" && (
-                  <span className="admin-pill">{action.count}</span>
+                  <span className="admin-pill">{formatNumber(action.count)}</span>
                 )}
               </button>
             ))}
+            {!loading && quickActions.length === 0 ? (
+              <div className="admin-empty-state">No quick actions available.</div>
+            ) : null}
           </div>
         </article>
 
         <article className="admin-surface">
-          <h2>Recent Activity</h2>
+          <div className="admin-row">
+            <h2>Recent Activity</h2>
+            <span className="admin-pill">Latest updates</span>
+          </div>
           <div className="admin-tag-list">
-            {recentActivity.map((activity) => (
-              <div key={activity.action} className="admin-card" style={{ gap: "6px" }}>
+            {recentActivity.map((activity, index) => (
+              <div
+                key={`${activity.action}-${activity.createdAt ?? index}`}
+                className="admin-card"
+                style={{ gap: "6px" }}
+              >
                 <div className="admin-row" style={{ gap: "8px" }}>
                   <span
                     className={badgeClassByTone[activity.tone] || "admin-chip"}
                     style={{ fontSize: "10px" }}
                   >
-                    {activity.time}
+                    {computeTime(activity.createdAt, activity.time)}
                   </span>
                   <strong style={{ fontSize: "14px" }}>{activity.action}</strong>
                 </div>
                 <p className="admin-muted" style={{ margin: 0 }}>
-                  {activity.member}
+                  {activity.subject ?? activity.detail ?? "No additional details."}
                 </p>
               </div>
             ))}
+            {!loading && recentActivity.length === 0 ? (
+              <div className="admin-empty-state">No recent activity yet.</div>
+            ) : null}
           </div>
         </article>
       </section>
@@ -222,11 +244,14 @@ export default function Dashboard({ onNavigate }) {
             <div key={status.label} className="admin-metric">
               <span>{status.label}</span>
               <strong>
-                {status.value}
+                {formatNumber(status.value)}
                 {status.unit ? status.unit : "%"}
               </strong>
             </div>
           ))}
+          {!loading && systemStatus.length === 0 ? (
+            <div className="admin-empty-state">Status metrics unavailable.</div>
+          ) : null}
         </div>
         <p className="admin-muted" style={{ marginTop: "12px" }}>
           Status data refreshes automatically every 5 minutes.

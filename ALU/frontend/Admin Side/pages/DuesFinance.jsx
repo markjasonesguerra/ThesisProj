@@ -1,44 +1,59 @@
 import "../styles/admin-base.css";
 import { WalletCards, BarChart3, Receipt, ArrowDownCircle } from "lucide-react";
 
-const duesMetrics = [
-  { id: "collected", label: "Collected this month", value: "₱1.2M", tone: "is-green" },
-  { id: "pending", label: "Pending payroll", value: "₱280K", tone: "is-orange" },
-  { id: "backlog", label: "Arrears", value: "₱95K" },
-  { id: "members", label: "Active members", value: "3,218" },
-];
-
-const payrollBatches = [
-  {
-    id: "batch-01",
-    employer: "SM Retail Group",
-    amount: "₱420,000",
-    dueDate: "2025-10-05",
-    status: "Processing",
-  },
-  {
-    id: "batch-02",
-    employer: "ABC Manufacturing",
-    amount: "₱195,500",
-    dueDate: "2025-10-06",
-    status: "Awaiting file",
-  },
-  {
-    id: "batch-03",
-    employer: "TUCP Coop",
-    amount: "₱86,900",
-    dueDate: "2025-10-07",
-    status: "Scheduled",
-  },
-];
-
-const arrearsMembers = [
-  { id: "member-2145", name: "member-2145-ALU", employer: "SM Retail", days: 45, amount: "₱1,850" },
-  { id: "member-3001", name: "member-3001-ALU", employer: "ABC Manufacturing", days: 32, amount: "₱1,200" },
-  { id: "member-4177", name: "member-4177-ALU", employer: "LRT Operations", days: 60, amount: "₱2,400" },
-];
+import { useEffect, useState } from "react";
+import client from "../../src/api/client";
 
 export default function DuesFinance() {
+  const [metrics, setMetrics] = useState([]);
+  const [payroll, setPayroll] = useState([]);
+  const [arrears, setArrears] = useState([]);
+  const [guidance, setGuidance] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    let subscribed = true;
+
+    const fetchData = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        const response = await client.get("/api/admin/dues/overview");
+        if (!subscribed) return;
+        setMetrics(response.data?.metrics ?? []);
+        setPayroll(response.data?.payroll ?? []);
+        setArrears(response.data?.arrears ?? []);
+        setGuidance(response.data?.guidance ?? []);
+      } catch (err) {
+        if (!subscribed) return;
+        setError(err?.response?.data?.message ?? "Unable to load dues and finance data.");
+        setMetrics([]);
+        setPayroll([]);
+        setArrears([]);
+      } finally {
+        if (subscribed) {
+          setLoading(false);
+        }
+      }
+    };
+
+    fetchData();
+    return () => {
+      subscribed = false;
+    };
+  }, []);
+
+  const formatCurrency = (value) => {
+    if (value === null || value === undefined) return "₱0";
+    return new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP", minimumFractionDigits: 0 }).format(value);
+  };
+
+  const formatNumber = (value) => {
+    if (value === null || value === undefined) return "0";
+    return new Intl.NumberFormat("en-PH").format(value);
+  };
+
   return (
     <div className="admin-page admin-stack-lg">
       <header className="admin-row">
@@ -56,13 +71,21 @@ export default function DuesFinance() {
       </header>
 
       <section className="admin-card-grid cols-4">
-        {duesMetrics.map((metric) => (
+        {metrics.map((metric) => (
           <article key={metric.id} className="admin-card">
             <div className="admin-card__label">{metric.label}</div>
-            <div className="admin-card__value">{metric.value}</div>
+            <div className="admin-card__value">
+              {metric.id === "members" ? formatNumber(metric.value) : formatCurrency(metric.value)}
+            </div>
             {metric.tone ? <span className={`admin-chip ${metric.tone}`.trim()}>Live</span> : null}
           </article>
         ))}
+        {!loading && metrics.length === 0 ? (
+          <article className="admin-card" style={{ gridColumn: "1 / -1", textAlign: "center" }}>
+            <div className="admin-card__label">No finance metrics available</div>
+            <div className="admin-card__meta">Add dues entries to populate this dashboard.</div>
+          </article>
+        ) : null}
       </section>
 
       <section className="admin-surface admin-stack-md">
@@ -87,17 +110,31 @@ export default function DuesFinance() {
               </tr>
             </thead>
             <tbody>
-              {payrollBatches.map((batch) => (
+              {payroll.map((batch) => (
                 <tr key={batch.id}>
                   <td className="admin-proponent__mono">{batch.id}</td>
                   <td>{batch.employer}</td>
-                  <td>{batch.amount}</td>
-                  <td>{batch.dueDate}</td>
+                  <td>{formatCurrency(batch.amount)}</td>
+                  <td>{batch.dueDate ? new Date(batch.dueDate).toLocaleDateString() : "—"}</td>
                   <td>
                     <span className="admin-chip is-blue">{batch.status}</span>
                   </td>
                 </tr>
               ))}
+              {!loading && payroll.length === 0 ? (
+                <tr>
+                  <td colSpan={5}>
+                    <div className="admin-empty-state">No pending payroll batches.</div>
+                  </td>
+                </tr>
+              ) : null}
+              {loading ? (
+                <tr>
+                  <td colSpan={5}>
+                    <div className="admin-empty-state">Loading payroll data…</div>
+                  </td>
+                </tr>
+              ) : null}
             </tbody>
           </table>
         </div>
@@ -125,17 +162,31 @@ export default function DuesFinance() {
               </tr>
             </thead>
             <tbody>
-              {arrearsMembers.map((member) => (
+              {arrears.map((member) => (
                 <tr key={member.id}>
-                  <td>{member.name}</td>
+                  <td>{member.memberAlias ?? member.name}</td>
                   <td>{member.employer}</td>
-                  <td>{member.days} days</td>
-                  <td>{member.amount}</td>
+                  <td>{member.daysOverdue} days</td>
+                  <td>{formatCurrency(member.amount)}</td>
                   <td>
                     <span className="admin-chip is-orange">Send reminder</span>
                   </td>
                 </tr>
               ))}
+              {!loading && arrears.length === 0 ? (
+                <tr>
+                  <td colSpan={5}>
+                    <div className="admin-empty-state">No members currently overdue.</div>
+                  </td>
+                </tr>
+              ) : null}
+              {loading ? (
+                <tr>
+                  <td colSpan={5}>
+                    <div className="admin-empty-state">Loading arrears watchlist…</div>
+                  </td>
+                </tr>
+              ) : null}
             </tbody>
           </table>
         </div>
@@ -152,11 +203,17 @@ export default function DuesFinance() {
           </div>
         </div>
         <div className="admin-list">
-          <span>Verify payroll batch files within 12 hours of receipt.</span>
-          <span>Escalate any arrears beyond 45 days to the finance committee.</span>
-          <span>Send monthly statements to employers summarizing deductions and remittances.</span>
+          {guidance.length
+            ? guidance.map((item, index) => <span key={`${item}-${index}`}>{item}</span>)
+            : (
+              <span className="admin-muted">No guidance noted yet.</span>
+            )}
         </div>
       </section>
+
+      {error ? (
+        <div className="admin-empty-state">{error}</div>
+      ) : null}
     </div>
   );
 }
