@@ -1,45 +1,98 @@
-import { useMemo, useState } from "react";
-import { Gauge, Rocket, Shield, RefreshCcw, TrendingUp } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Gauge, Rocket, Shield, RefreshCcw, TrendingUp, Loader2 } from "lucide-react";
 import "../styles/admin-base.css";
-import { aiAnalytics } from "../components/ai/mockAiData";
 import ConfidenceBar from "../components/ai/ConfidenceBar";
 
-const modelRollouts = [
-  {
-    id: "gpt4",
-    name: "OpenAI GPT-4 Turbo",
-    capabilities: ["Routing", "Drafting", "Summaries"],
-    coverage: 0.78,
-    lastUpdate: "2025-09-15",
-  },
-  {
-    id: "claude",
-    name: "Anthropic Claude Admin",
-    capabilities: ["Policy Guardrails", "Audit Notes"],
-    coverage: 0.32,
-    lastUpdate: "2025-08-20",
-  },
-];
+import client from "../../src/api/client";
 
 export default function AISettings() {
-  const [controls, setControls] = useState({
-    autoAssign: true,
-    autoResolve: true,
-    auditLogging: true,
-    suggestionDiff: true,
+  const [automationControls, setAutomationControls] = useState({
+    autoAssign: false,
+    autoResolve: false,
+    auditLogging: false,
+    suggestionDiff: false,
   });
+  const [modelRollouts, setModelRollouts] = useState([]);
+  const [metrics, setMetrics] = useState({
+    autoAssignRate: 0,
+    avgConfidence: 0,
+    overrideRate: 0,
+  });
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [dirty, setDirty] = useState(false);
+  const [error, setError] = useState(null);
+  const [successMessage, setSuccessMessage] = useState(null);
 
-  const toggle = (key) => setControls((prev) => ({ ...prev, [key]: !prev[key] }));
+  const fetchSettings = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const response = await client.get("/api/admin/ai/settings");
+      const settings = response.data?.settings ?? {};
+      const automation = settings.automationControls ?? {};
+      setAutomationControls({
+        autoAssign: Boolean(automation.autoAssign),
+        autoResolve: Boolean(automation.autoResolve),
+        auditLogging: Boolean(automation.auditLogging),
+        suggestionDiff: Boolean(automation.suggestionDiff),
+      });
+      setModelRollouts(Array.isArray(settings.modelRollouts) ? settings.modelRollouts : []);
+      setMetrics({
+        autoAssignRate: Number(settings.metrics?.autoAssignRate ?? 0),
+        avgConfidence: Number(settings.metrics?.avgConfidence ?? 0),
+        overrideRate: Number(settings.metrics?.overrideRate ?? 0),
+      });
+      setDirty(false);
+    } catch (err) {
+      setError(err?.response?.data?.message ?? "Unable to load AI settings");
+      setModelRollouts([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchSettings();
+  }, []);
+
+  const toggle = (key) => {
+    setAutomationControls((prev) => {
+      const next = { ...prev, [key]: !prev[key] };
+      setDirty(true);
+      return next;
+    });
+  };
 
   const coverageAverage = useMemo(() => {
     if (!modelRollouts.length) {
       return 0;
     }
-    return (
-      modelRollouts.reduce((acc, item) => acc + item.coverage, 0) /
-      modelRollouts.length
-    );
-  }, []);
+    return modelRollouts.reduce((acc, item) => acc + Number(item.coverage ?? 0), 0) / modelRollouts.length;
+  }, [modelRollouts]);
+
+  const handleSyncModels = () => {
+    fetchSettings();
+  };
+
+  const handlePublish = async () => {
+    try {
+      setSaving(true);
+      setError(null);
+      setSuccessMessage(null);
+      await client.put("/api/admin/ai/settings", {
+        settings: {
+          automationControls,
+        },
+      });
+      setDirty(false);
+      setSuccessMessage("AI settings published");
+    } catch (err) {
+      setError(err?.response?.data?.message ?? "Unable to publish AI settings");
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <div className="admin-page admin-stack-lg">
@@ -51,20 +104,35 @@ export default function AISettings() {
           </p>
         </div>
         <div className="admin-actions">
-          <button type="button" className="admin-button">
-            <RefreshCcw size={16} /> Sync Models
+          <button
+            type="button"
+            className="admin-button"
+            onClick={handleSyncModels}
+            disabled={loading || saving}
+          >
+            {loading ? <Loader2 size={16} /> : <RefreshCcw size={16} />}
+            Sync Models
           </button>
-          <button type="button" className="admin-button is-primary">
-            <Shield size={16} /> Publish Updates
+          <button
+            type="button"
+            className="admin-button is-primary"
+            onClick={handlePublish}
+            disabled={saving || loading || !dirty}
+          >
+            {saving ? <Loader2 size={16} /> : <Shield size={16} />}
+            {saving ? "Publishing" : "Publish Updates"}
           </button>
         </div>
       </header>
+
+      {error ? <div className="admin-alert is-error">{error}</div> : null}
+      {successMessage ? <div className="admin-alert is-success">{successMessage}</div> : null}
 
       <section className="admin-card-grid cols-3">
         <article className="admin-card">
           <div className="admin-card__label">Auto assignment rate</div>
           <div className="admin-row" style={{ gap: "10px" }}>
-            <div className="admin-card__value">{aiAnalytics.autoAssignRate}%</div>
+            <div className="admin-card__value">{metrics.autoAssignRate}%</div>
             <span className="admin-chip is-green">
               <TrendingUp size={14} /> +3%
             </span>
@@ -73,12 +141,12 @@ export default function AISettings() {
         </article>
         <article className="admin-card">
           <div className="admin-card__label">Average confidence</div>
-          <ConfidenceBar confidence={aiAnalytics.avgConfidence} />
+          <ConfidenceBar confidence={metrics.avgConfidence} />
           <div className="admin-card__meta">Across last 30 days of AI decisions</div>
         </article>
         <article className="admin-card">
           <div className="admin-card__label">Override rate</div>
-          <div className="admin-card__value">{aiAnalytics.overrideRate}%</div>
+          <div className="admin-card__value">{metrics.overrideRate}%</div>
           <div className="admin-card__meta">Lower is better; training feeds adjust daily</div>
         </article>
       </section>
@@ -105,8 +173,9 @@ export default function AISettings() {
             <button
               type="button"
               id="autoAssign"
-              className={`admin-toggle ${controls.autoAssign ? "active" : ""}`}
+              className={`admin-toggle ${automationControls.autoAssign ? "active" : ""}`.trim()}
               onClick={() => toggle("autoAssign")}
+              disabled={loading || saving}
             >
               <span />
             </button>
@@ -122,8 +191,9 @@ export default function AISettings() {
             <button
               type="button"
               id="autoResolve"
-              className={`admin-toggle ${controls.autoResolve ? "active" : ""}`}
+              className={`admin-toggle ${automationControls.autoResolve ? "active" : ""}`.trim()}
               onClick={() => toggle("autoResolve")}
+              disabled={loading || saving}
             >
               <span />
             </button>
@@ -139,8 +209,9 @@ export default function AISettings() {
             <button
               type="button"
               id="auditLogging"
-              className={`admin-toggle ${controls.auditLogging ? "active" : ""}`}
+              className={`admin-toggle ${automationControls.auditLogging ? "active" : ""}`.trim()}
               onClick={() => toggle("auditLogging")}
+              disabled={loading || saving}
             >
               <span />
             </button>
@@ -156,8 +227,9 @@ export default function AISettings() {
             <button
               type="button"
               id="suggestionDiff"
-              className={`admin-toggle ${controls.suggestionDiff ? "active" : ""}`}
+              className={`admin-toggle ${automationControls.suggestionDiff ? "active" : ""}`.trim()}
               onClick={() => toggle("suggestionDiff")}
+              disabled={loading || saving}
             >
               <span />
             </button>
@@ -176,7 +248,7 @@ export default function AISettings() {
           </div>
         </div>
 
-  <div className="admin-scroll">
+      <div className="admin-scroll">
           <table className="admin-table">
             <thead>
               <tr>
@@ -187,13 +259,13 @@ export default function AISettings() {
               </tr>
             </thead>
             <tbody>
-              {modelRollouts.map((model) => (
+              {modelRollouts.map((model, index) => (
                 <tr key={model.id}>
                   <td>{model.name}</td>
                   <td>
                     <div className="admin-inline-list">
-                      {model.capabilities.map((cap) => (
-                        <span key={cap}>{cap}</span>
+                      {(Array.isArray(model.capabilities) ? model.capabilities : []).map((cap) => (
+                        <span key={`${model.id || index}-${cap}`}>{cap}</span>
                       ))}
                     </div>
                   </td>

@@ -16,11 +16,21 @@ import {
 } from './helpers.js';
 import registerDashboardRoute from './dashboard.js';
 import registerMemberRoutes from './members.js';
+import registerAuditRoutes from './audit.js';
+import registerAIRoutes from './ai.js';
+import registerSecurityRoutes from './security.js';
+import registerAdminSettingsRoutes from './settings.js';
+import registerIdCardRoutes from './idcards.js';
 
 const router = express.Router();
 
 registerDashboardRoute(router);
 registerMemberRoutes(router);
+registerAuditRoutes(router);
+registerAIRoutes(router);
+registerSecurityRoutes(router);
+registerAdminSettingsRoutes(router);
+registerIdCardRoutes(router);
 
 router.get('/approvals/final-queue', async (_req, res) => {
   try {

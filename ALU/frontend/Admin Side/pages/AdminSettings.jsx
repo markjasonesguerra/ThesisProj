@@ -1,40 +1,134 @@
-import { useState } from "react";
-import { Check, Shield, Bell, Database, Save } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Check, Shield, Bell, Database, Save, Loader2, RefreshCw } from "lucide-react";
 import "../styles/admin-base.css";
 
-const escalationLevels = [
-  {
-    id: "level-1",
-    name: "Standard Requests",
-    owner: "Benefits Team",
-    response: "24 hours",
-    fallback: "AI summary only",
-  },
-  {
-    id: "level-2",
-    name: "Sensitive Cases",
-    owner: "Senior Officer",
-    response: "12 hours",
-    fallback: "Manual review required",
-  },
-  {
-    id: "level-3",
-    name: "Critical Issues",
-    owner: "Director",
-    response: "4 hours",
-    fallback: "Auto-escalate to hotline",
-  },
-];
+import client from "../../src/api/client";
 
 export default function AdminSettings() {
-  const [notifications, setNotifications] = useState({
-    dailyDigest: true,
-    aiSummary: true,
-    escalationSms: false,
-  });
+  const [systemSettings, setSystemSettings] = useState({});
+  const [roles, setRoles] = useState([]);
+  const [notifications, setNotifications] = useState({});
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [dirty, setDirty] = useState(false);
+  const [error, setError] = useState(null);
+  const [successMessage, setSuccessMessage] = useState(null);
+
+  useEffect(() => {
+    let subscribed = true;
+
+    const fetchData = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        const [systemResponse, rolesResponse] = await Promise.all([
+          client.get("/api/admin/settings/system"),
+          client.get("/api/admin/settings/roles"),
+        ]);
+
+        if (!subscribed) {
+          return;
+        }
+
+        const settingsPayload = systemResponse.data?.settings ?? {};
+        setSystemSettings(settingsPayload);
+        const notificationPayload = settingsPayload.notificationSettings ?? {};
+        setNotifications({
+          dailyDigest: Boolean(notificationPayload.dailyDigest),
+          aiSummary: Boolean(notificationPayload.aiSummary),
+          escalationSms: Boolean(notificationPayload.escalationSms),
+        });
+        setRoles(rolesResponse.data?.roles ?? []);
+        setDirty(false);
+      } catch (err) {
+        if (!subscribed) {
+          return;
+        }
+        setError(err?.response?.data?.message ?? "Unable to load admin settings");
+        setSystemSettings({});
+        setRoles([]);
+      } finally {
+        if (subscribed) {
+          setLoading(false);
+        }
+      }
+    };
+
+    fetchData();
+    return () => {
+      subscribed = false;
+    };
+  }, []);
 
   const toggle = (key) => {
-    setNotifications((prev) => ({ ...prev, [key]: !prev[key] }));
+    setNotifications((prev) => {
+      const next = { ...prev, [key]: !prev[key] };
+      setDirty(true);
+      return next;
+    });
+  };
+
+  const environment = systemSettings.environment ?? {};
+
+  const escalationLevels = useMemo(() => {
+    const matrix = systemSettings.escalationMatrix;
+    if (Array.isArray(matrix)) {
+      return matrix.map((entry, index) => ({
+        id: entry.id ?? `matrix-${index}`,
+        name: entry.name ?? "Level",
+        owner: entry.owner ?? "Unassigned",
+        response: entry.response ?? "",
+        fallback: entry.fallback ?? "",
+      }));
+    }
+    return [];
+  }, [systemSettings.escalationMatrix]);
+
+  const roleCards = useMemo(() => roles.slice(0, 3), [roles]);
+
+  const handleSave = async () => {
+    try {
+      setSaving(true);
+      setError(null);
+      setSuccessMessage(null);
+      await client.put("/api/admin/settings/system", {
+        settings: {
+          notificationSettings: notifications,
+        },
+      });
+      setDirty(false);
+      setSuccessMessage("Notification settings saved");
+    } catch (err) {
+      setError(err?.response?.data?.message ?? "Unable to save settings");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleRefresh = async () => {
+    setDirty(false);
+    setSuccessMessage(null);
+    setError(null);
+    setLoading(true);
+    try {
+      const [systemResponse, rolesResponse] = await Promise.all([
+        client.get("/api/admin/settings/system"),
+        client.get("/api/admin/settings/roles"),
+      ]);
+      const settingsPayload = systemResponse.data?.settings ?? {};
+      setSystemSettings(settingsPayload);
+      const notificationPayload = settingsPayload.notificationSettings ?? {};
+      setNotifications({
+        dailyDigest: Boolean(notificationPayload.dailyDigest),
+        aiSummary: Boolean(notificationPayload.aiSummary),
+        escalationSms: Boolean(notificationPayload.escalationSms),
+      });
+      setRoles(rolesResponse.data?.roles ?? []);
+    } catch (err) {
+      setError(err?.response?.data?.message ?? "Unable to refresh settings");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -47,30 +141,56 @@ export default function AdminSettings() {
             controls to keep the admin experience consistent.
           </p>
         </div>
-        <button type="button" className="admin-button">
-          <Save size={16} /> Save Changes
-        </button>
+        <div className="admin-row" style={{ gap: "8px" }}>
+          <button
+            type="button"
+            className="admin-button"
+            onClick={handleRefresh}
+            disabled={loading || saving}
+          >
+            {loading ? <Loader2 size={16} /> : <RefreshCw size={16} />}
+            Refresh
+          </button>
+          <button
+            type="button"
+            className="admin-button"
+            onClick={handleSave}
+            disabled={saving || loading || !dirty}
+          >
+            {saving ? <Loader2 size={16} /> : <Save size={16} />}
+            {saving ? "Saving" : "Save Changes"}
+          </button>
+        </div>
       </header>
+
+      {error ? <div className="admin-alert is-error">{error}</div> : null}
+      {successMessage ? <div className="admin-alert is-success">{successMessage}</div> : null}
 
       <section className="admin-card-grid cols-3">
         <article className="admin-card">
           <div className="admin-card__label">Environment</div>
-          <div className="admin-card__value">Production</div>
+          <div className="admin-card__value">{environment.name ?? "Unspecified"}</div>
           <div className="admin-card__meta">
-            Connected to live member services data
+            {environment.description ?? "Environment configuration"}
           </div>
         </article>
         <article className="admin-card">
           <div className="admin-card__label">Default Response SLA</div>
-          <div className="admin-card__value">24h</div>
+          <div className="admin-card__value">
+            {environment.defaultResponseSlaHours
+              ? `${environment.defaultResponseSlaHours}h`
+              : "Not set"}
+          </div>
           <div className="admin-card__meta">Applies to untagged requests</div>
         </article>
         <article className="admin-card">
           <div className="admin-card__label">AI Assist Rollout</div>
-          <div className="admin-card__value">78%</div>
-          <div className="admin-card__meta">
-            Admins with AI suggestions enabled
+          <div className="admin-card__value">
+            {environment.aiAssistRolloutPercent !== undefined
+              ? `${environment.aiAssistRolloutPercent}%`
+              : "0%"}
           </div>
+          <div className="admin-card__meta">Admins with AI suggestions enabled</div>
         </article>
       </section>
 
@@ -97,8 +217,9 @@ export default function AdminSettings() {
             <button
               type="button"
               id="dailyDigest"
-              className={`admin-toggle ${notifications.dailyDigest ? "active" : ""}`}
+              className={`admin-toggle ${notifications.dailyDigest ? "active" : ""}`.trim()}
               onClick={() => toggle("dailyDigest")}
+              disabled={loading || saving}
             >
               <span />
             </button>
@@ -114,8 +235,9 @@ export default function AdminSettings() {
             <button
               type="button"
               id="aiSummary"
-              className={`admin-toggle ${notifications.aiSummary ? "active" : ""}`}
+              className={`admin-toggle ${notifications.aiSummary ? "active" : ""}`.trim()}
               onClick={() => toggle("aiSummary")}
+              disabled={loading || saving}
             >
               <span />
             </button>
@@ -131,8 +253,9 @@ export default function AdminSettings() {
             <button
               type="button"
               id="escalationSms"
-              className={`admin-toggle ${notifications.escalationSms ? "active" : ""}`}
+              className={`admin-toggle ${notifications.escalationSms ? "active" : ""}`.trim()}
               onClick={() => toggle("escalationSms")}
+              disabled={loading || saving}
             >
               <span />
             </button>
@@ -151,33 +274,21 @@ export default function AdminSettings() {
           </div>
         </div>
         <div className="admin-role-grid">
-          <div className="admin-role-card">
-            <h3>Admin Supervisor</h3>
-            <ul>
-              <li>Approve final responses</li>
-              <li>Override AI redactions</li>
-              <li>Manage union-wide settings</li>
-            </ul>
-            <span className="admin-chip is-green">12 assigned</span>
-          </div>
-          <div className="admin-role-card">
-            <h3>Benefits Officer</h3>
-            <ul>
-              <li>Handle benefits-related tickets</li>
-              <li>Access member documents</li>
-              <li>Submit feedback to AI team</li>
-            </ul>
-            <span className="admin-chip is-blue">24 assigned</span>
-          </div>
-          <div className="admin-role-card">
-            <h3>Guest Auditor</h3>
-            <ul>
-              <li>Read-only access</li>
-              <li>Export reports</li>
-              <li>Leave compliance notes</li>
-            </ul>
-            <span className="admin-chip">6 assigned</span>
-          </div>
+          {roleCards.length === 0 ? (
+            <div className="admin-empty">No roles available.</div>
+          ) : (
+            roleCards.map((role) => (
+              <div key={role.id} className="admin-role-card">
+                <h3>{role.name}</h3>
+                <ul>
+                  {(Array.isArray(role.permissions) ? role.permissions : []).slice(0, 3).map((permission) => (
+                    <li key={permission}>{permission}</li>
+                  ))}
+                </ul>
+                <span className="admin-chip is-green">{role.adminCount} assigned</span>
+              </div>
+            ))
+          )}
         </div>
       </section>
 
@@ -191,34 +302,38 @@ export default function AdminSettings() {
             </p>
           </div>
         </div>
-        <div className="admin-scroll">
-          <table className="admin-table">
-            <thead>
-              <tr>
-                <th>Level</th>
-                <th>Primary Owner</th>
-                <th>Response Time</th>
-                <th>Fallback</th>
-                <th>Confirmation</th>
-              </tr>
-            </thead>
-            <tbody>
-              {escalationLevels.map((level) => (
-                <tr key={level.id}>
-                  <td>{level.name}</td>
-                  <td>{level.owner}</td>
-                  <td>{level.response}</td>
-                  <td>{level.fallback}</td>
-                  <td>
-                    <span className="admin-chip is-green">
-                      <Check size={14} /> On track
-                    </span>
-                  </td>
+        {escalationLevels.length === 0 ? (
+          <div className="admin-empty">No escalation matrix configured.</div>
+        ) : (
+          <div className="admin-scroll">
+            <table className="admin-table">
+              <thead>
+                <tr>
+                  <th>Level</th>
+                  <th>Primary Owner</th>
+                  <th>Response Time</th>
+                  <th>Fallback</th>
+                  <th>Confirmation</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {escalationLevels.map((level) => (
+                  <tr key={level.id}>
+                    <td>{level.name}</td>
+                    <td>{level.owner}</td>
+                    <td>{level.response || ""}</td>
+                    <td>{level.fallback || ""}</td>
+                    <td>
+                      <span className="admin-chip is-green">
+                        <Check size={14} /> On track
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </section>
     </div>
   );
