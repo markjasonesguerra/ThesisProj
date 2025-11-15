@@ -8,6 +8,7 @@ import {
   User,
   LogOut,
   Bell,
+  HeartHandshake,
 } from 'lucide-react';
 import '@userStyles/layout.css';
 
@@ -16,6 +17,7 @@ const NAV_ITEMS = [
   { label: 'News', icon: Newspaper, path: '/news' },
   { label: 'Digital ID', icon: QrCode, path: '/digital-id', isCenter: true },
   { label: 'Dues', icon: History, path: '/dues' },
+  { label: 'Request & Assistance', icon: HeartHandshake, path: '/request-assistance' },
   { label: 'Account', icon: User, path: '/account' },
 ];
 

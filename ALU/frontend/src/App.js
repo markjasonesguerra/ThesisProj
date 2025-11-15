@@ -13,6 +13,7 @@ import NewsPage from '@userPages/NewsPage.jsx';
 import AccountPage from '@userPages/AccountPage.jsx';
 import BenefitsPage from '@userPages/BenefitsPage.jsx';
 import MembershipFormPage from '@userPages/MembershipFormPage.jsx';
+import RequestAssistancePage from '@userPages/RequestAssistance.jsx';
 import AdminLayout from '@adminComponents/AdminLayout.jsx';
 import AdminDashboard from '@adminPages/Dashboard.jsx';
 import MembersTable from '@adminPages/MembersTable.jsx';
@@ -84,6 +85,8 @@ function App() {
       onLogout={handleLogout}
     />
   );
+
+  const RequestAssistanceRoute = () => <RequestAssistancePage user={user} onLogout={handleLogout} />;
 
   const LandingRoute = () => {
     const navigate = useNavigate();
@@ -246,6 +249,14 @@ function App() {
           element={(
             <Protected isAuthenticated={isAuthenticated}>
               <MembershipFormRoute />
+            </Protected>
+          )}
+        />
+        <Route
+          path="/request-assistance"
+          element={(
+            <Protected isAuthenticated={isAuthenticated}>
+              <RequestAssistanceRoute />
             </Protected>
           )}
         />
