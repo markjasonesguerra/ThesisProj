@@ -21,6 +21,10 @@ import registerAIRoutes from './ai.js';
 import registerSecurityRoutes from './security.js';
 import registerAdminSettingsRoutes from './settings.js';
 import registerIdCardRoutes from './idcards.js';
+import registerTicketsRoutes from './tickets.js';
+import registerBenefitsRoutes from './benefits.js';
+import registerEventsRoutes from './events.js';
+import registerReportsRoutes from './reports.js';
 
 const router = express.Router();
 
@@ -31,6 +35,10 @@ registerAIRoutes(router);
 registerSecurityRoutes(router);
 registerAdminSettingsRoutes(router);
 registerIdCardRoutes(router);
+registerTicketsRoutes(router);
+registerBenefitsRoutes(router);
+registerEventsRoutes(router);
+registerReportsRoutes(router);
 
 router.get('/approvals/final-queue', async (_req, res) => {
   try {

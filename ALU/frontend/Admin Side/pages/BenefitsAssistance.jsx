@@ -1,24 +1,47 @@
+import { useEffect, useState } from "react";
 import "../styles/admin-base.css";
-import { mockAITickets } from "../components/ai/mockAiData";
-import ConfidenceBar from "../components/ai/ConfidenceBar";
-
-const metrics = [
-  { id: "active", label: "Active benefit cases", value: 42, tone: "is-blue" },
-  { id: "approval", label: "Approval rate", value: "92%", tone: "is-green" },
-  { id: "processing", label: "Avg processing time", value: "3.4 days" },
-  { id: "funds", label: "Funds disbursed", value: "₱1.8M" },
-];
+import api from "../api/admin";
 
 const kanbanGroups = [
-  { key: "auto-assigned", label: "Auto-assigned", tone: "is-green" },
-  { key: "needs-assignment", label: "Needs assignment", tone: "is-orange" },
-  { key: "in-progress", label: "In progress", tone: "is-blue" },
+  { key: "submitted", label: "Submitted", tone: "is-orange" },
+  { key: "under_review", label: "Under review", tone: "is-blue" },
+  { key: "approved", label: "Approved", tone: "is-green" },
 ];
 
 export default function BenefitsAssistance() {
+  const [programs, setPrograms] = useState([]);
+  const [requests, setRequests] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let mounted = true;
+    const load = async () => {
+      setLoading(true);
+      try {
+        const [progRes, reqRes] = await Promise.all([api.listBenefitPrograms(), api.listBenefitRequests({ pageSize: 100 })]);
+        if (!mounted) return;
+  setPrograms(progRes.data.programs || progRes.data || []);
+  setRequests(reqRes.data.results || reqRes.data || []);
+      } catch (err) {
+        console.error('Unable to load benefits data', err);
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    };
+    load();
+    return () => { mounted = false; };
+  }, []);
+
+  const metrics = [
+    { id: "programs", label: "Benefit programs", value: programs.length, tone: "is-blue" },
+    { id: "requests", label: "Open requests", value: requests.length, tone: "is-orange" },
+    { id: "approved", label: "Approved requests", value: requests.filter(r => r.status === 'approved').length },
+    { id: "pending", label: "Pending review", value: requests.filter(r => r.status === 'under_review' || r.status === 'submitted').length },
+  ];
+
   const grouped = kanbanGroups.map((group) => ({
     ...group,
-    items: mockAITickets.filter((ticket) => ticket.status === group.key).slice(0, 4),
+    items: requests.filter((t) => t.status === group.key).slice(0, 6),
   }));
 
   return (
@@ -26,18 +49,16 @@ export default function BenefitsAssistance() {
       <header className="admin-row">
         <div>
           <h1>Benefits Assistance</h1>
-          <p className="admin-muted">
-            Monitor and triage incoming benefits requests with AI-assisted routing and approval signals.
-          </p>
+          <p className="admin-muted">Monitor and triage incoming benefits requests.</p>
         </div>
-        <span className="admin-pill">Data snapshot: today</span>
+        <span className="admin-pill">Data snapshot: live</span>
       </header>
 
       <section className="admin-card-grid cols-4">
         {metrics.map((metric) => (
           <article key={metric.id} className="admin-card">
             <div className="admin-card__label">{metric.label}</div>
-            <div className="admin-card__value">{metric.value}</div>
+            <div className="admin-card__value">{loading ? '—' : metric.value}</div>
             {metric.tone ? <span className={`admin-chip ${metric.tone}`.trim()}>Live</span> : null}
           </article>
         ))}
@@ -50,22 +71,17 @@ export default function BenefitsAssistance() {
             <div key={column.key} className="admin-kanban__column">
               <h3>
                 {column.label}
-                <span className={`admin-chip ${column.tone}`.trim()}>
-                  {column.items.length}
-                </span>
+                <span className={`admin-chip ${column.tone}`.trim()}>{column.items.length}</span>
               </h3>
               {column.items.map((ticket) => (
                 <div key={ticket.id} className="admin-kanban__card">
-                  <div className="admin-kanban__meta">{ticket.ticketId}</div>
-                  <strong>{ticket.title}</strong>
-                  <p className="admin-muted">{ticket.memberPseudonym}</p>
-                  <ConfidenceBar confidence={ticket.suggestion.confidence} size="sm" />
+                  <div className="admin-kanban__meta">{ticket.id}</div>
+                  <strong>{ticket.program?.title ?? ticket.programTitle ?? `Request ${ticket.id}`}</strong>
+                  <p className="admin-muted">{ticket.user?.name ?? ticket.userEmail}</p>
                 </div>
               ))}
               {!column.items.length ? (
-                <div className="admin-empty-state">
-                  <p>No tickets in this state</p>
-                </div>
+                <div className="admin-empty-state"><p>No requests in this state</p></div>
               ) : null}
             </div>
           ))}
@@ -78,23 +94,21 @@ export default function BenefitsAssistance() {
           <table className="admin-table">
             <thead>
               <tr>
-                <th>Ticket</th>
+                <th>Request</th>
                 <th>Member</th>
-                <th>Category</th>
+                <th>Program</th>
                 <th>Status</th>
-                <th>AI Suggestion</th>
+                <th>Amount</th>
               </tr>
             </thead>
             <tbody>
-              {mockAITickets.slice(0, 8).map((ticket) => (
-                <tr key={ticket.id}>
-                  <td className="admin-proponent__mono">{ticket.ticketId}</td>
-                  <td>{ticket.memberPseudonym}</td>
-                  <td>{ticket.category}</td>
-                  <td>
-                    <span className="admin-chip is-blue">{ticket.status}</span>
-                  </td>
-                  <td>{ticket.suggestion.explanation}</td>
+              {(loading ? [] : requests.slice(0, 12)).map((r) => (
+                <tr key={r.id}>
+                  <td className="admin-proponent__mono">{r.id}</td>
+                  <td>{r.user?.name ?? r.userEmail}</td>
+                  <td>{r.program?.title ?? r.programTitle}</td>
+                  <td><span className="admin-chip is-blue">{r.status}</span></td>
+                  <td>{r.amountRequested ?? r.amount_requested ?? '—'}</td>
                 </tr>
               ))}
             </tbody>
