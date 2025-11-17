@@ -25,6 +25,8 @@ import registerTicketsRoutes from './tickets.js';
 import registerBenefitsRoutes from './benefits.js';
 import registerEventsRoutes from './events.js';
 import registerReportsRoutes from './reports.js';
+import registerTopBarRoutes from './topbar.js';
+import registerQuickSearchRoutes from './quicksearch.js';
 
 const router = express.Router();
 
@@ -60,6 +62,8 @@ registerTicketsRoutes(router);
 registerBenefitsRoutes(router);
 registerEventsRoutes(router);
 registerReportsRoutes(router);
+registerTopBarRoutes(router);
+registerQuickSearchRoutes(router);
 
 const loadRegistrationQueue = async () => {
   const rows = await runQuery(`
