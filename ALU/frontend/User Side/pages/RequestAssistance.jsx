@@ -1,5 +1,6 @@
 import PropTypes from 'prop-types';
 import { useState } from "react";
+import { useNavigate } from 'react-router-dom';
 import {
   Scale,
   Stethoscope,
@@ -55,6 +56,7 @@ const infoFields = [
 ];
 
 export default function RequestAssistance({ user, onLogout }) {
+  const navigate = useNavigate();
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [formData, setFormData] = useState({
     fullName: user?.firstName && user?.lastName ? `${user.firstName} ${user.lastName}` : "",
@@ -139,6 +141,103 @@ export default function RequestAssistance({ user, onLogout }) {
   };
 
   const selectedCategoryData = categories.find((c) => c.id === selectedCategory);
+
+  const isVerified = user?.isApproved === 'active' || user?.isApproved === 'approved' || user?.isApproved === true || user?.isApproved === 1 || user?.isApproved === '1';
+  const isIncomplete = user?.isApproved === 'incomplete' || ((user?.isApproved === 'pending' || user?.isApproved === 0 || user?.isApproved === false) && !user?.dateOfBirth);
+
+  if (!isVerified) {
+    return (
+      <AppLayout title="Request & Assistance" user={user} onLogout={onLogout}>
+        <div className="request-assistance-page">
+          <section className="request-assistance__intro">
+            <div className="request-assistance__intro-icon">
+              <HeartHandshake size={20} />
+            </div>
+            <div>
+              <h2>Need Help?</h2>
+              <p>Submit requests for legal consultation, medical assistance, educational scholarships, or emergency support. Our team will review and respond within 2-3 business days.</p>
+            </div>
+          </section>
+
+          <div className="verification-prompt" style={{ 
+            padding: '4rem 2rem', 
+            textAlign: 'center', 
+            maxWidth: '600px', 
+            margin: '2rem auto',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: '1.5rem',
+            backgroundColor: '#f9fafb',
+            borderRadius: '0.5rem',
+            border: '1px solid #e5e7eb'
+          }}>
+            <div style={{ color: '#f59e0b' }}>
+              <AlertCircle size={48} />
+            </div>
+            <h2 style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#1f2937' }}>
+              {isIncomplete ? "Verification Required" : "Application Under Review"}
+            </h2>
+            <p style={{ color: '#4b5563', lineHeight: '1.6' }}>
+              {isIncomplete 
+                ? "To submit assistance requests, your membership status must be verified. Please complete your profile to unlock this feature."
+                : "Your membership application is currently under review. You will be able to submit requests once your membership is approved."}
+            </p>
+            <div style={{ display: 'flex', gap: '1rem' }}>
+              {isIncomplete ? (
+                <button 
+                  type="button"
+                  onClick={() => navigate('/complete-profile')}
+                  style={{ 
+                    backgroundColor: '#2563eb', 
+                    color: 'white', 
+                    padding: '0.75rem 1.5rem', 
+                    borderRadius: '0.375rem',
+                    border: 'none',
+                    fontWeight: '500',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Complete Verification
+                </button>
+              ) : (
+                <button 
+                  type="button"
+                  onClick={() => navigate('/membership-form')}
+                  style={{ 
+                    backgroundColor: '#2563eb', 
+                    color: 'white', 
+                    padding: '0.75rem 1.5rem', 
+                    borderRadius: '0.375rem',
+                    border: 'none',
+                    fontWeight: '500',
+                    cursor: 'pointer'
+                  }}
+                >
+                  View Application
+                </button>
+              )}
+              <button 
+                type="button"
+                onClick={() => navigate('/dashboard')}
+                style={{ 
+                  backgroundColor: 'white', 
+                  color: '#374151', 
+                  padding: '0.75rem 1.5rem', 
+                  borderRadius: '0.375rem',
+                  border: '1px solid #d1d5db',
+                  fontWeight: '500',
+                  cursor: 'pointer'
+                }}
+              >
+                Back to Dashboard
+              </button>
+            </div>
+          </div>
+        </div>
+      </AppLayout>
+    );
+  }
 
   return (
     <AppLayout title="Request & Assistance" user={user} onLogout={onLogout}>

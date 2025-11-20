@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import PropTypes from 'prop-types';
+import { useNavigate } from 'react-router-dom';
 import {
   Building2,
   CalendarDays,
@@ -11,6 +12,7 @@ import {
   Shield,
   ShieldCheck,
   User,
+  AlertCircle,
 } from 'lucide-react';
 import AppLayout from '@components/AppLayout';
 import '../styles/digital-id.css';
@@ -29,6 +31,7 @@ const getMemberInitials = (firstName = '', lastName = '') => {
 };
 
 export default function DigitalIdPage({ user, onLogout }) {
+  const navigate = useNavigate();
   const [showBack, setShowBack] = useState(false);
 
   const profilePhoto = useMemo(
@@ -55,26 +58,97 @@ export default function DigitalIdPage({ user, onLogout }) {
 
   const shortMemberId = useMemo(() => memberId.split('-').pop() ?? memberId, [memberId]);
 
-  if (user?.isApproved === false) {
+  const isVerified = user?.isApproved === 'active' || user?.isApproved === 'approved' || user?.isApproved === true || user?.isApproved === 1 || user?.isApproved === '1';
+  const isIncomplete = user?.isApproved === 'incomplete' || ((user?.isApproved === 'pending' || user?.isApproved === 0 || user?.isApproved === false) && !user?.dateOfBirth);
+
+  if (!isVerified) {
     return (
       <AppLayout title="Digital Union ID" user={user} onLogout={onLogout}>
-        <div className="digital-id-pending">
-          <div className="digital-id-pending__icon">
-            <Shield size={48} />
-          </div>
-          <h2>Your digital ID is not ready yet</h2>
-          <p>
-            Your membership application is still under review. Once your application is approved,
-            your digital ID will be generated automatically and you will receive a notification.
-          </p>
-          <div className="digital-id-pending__status">
-            <span>Application Status</span>
-            <strong>Pending Approval</strong>
-            <small>Member ID: {memberId}</small>
-          </div>
-          <div className="digital-id-pending__actions">
-            <button type="button" className="button button--primary">View Application Form</button>
-            <button type="button" className="button button--secondary">Back to Dashboard</button>
+        <div className="digital-id-page">
+          <header className="digital-id-page__hero">
+            <div className="digital-id-page__hero-icon">
+              <ShieldCheck size={22} />
+            </div>
+            <div>
+              <h1>Official ALU Membership ID</h1>
+              <p>Tap to flip between the identity card and QR verification screen. Present together with a valid government ID.</p>
+            </div>
+          </header>
+
+          <div className="verification-prompt" style={{ 
+            padding: '4rem 2rem', 
+            textAlign: 'center', 
+            maxWidth: '600px', 
+            margin: '2rem auto',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: '1.5rem',
+            backgroundColor: '#f9fafb',
+            borderRadius: '0.5rem',
+            border: '1px solid #e5e7eb'
+          }}>
+            <div style={{ color: '#f59e0b' }}>
+              <AlertCircle size={48} />
+            </div>
+            <h2 style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#1f2937' }}>
+              {isIncomplete ? "Verification Required" : "Application Under Review"}
+            </h2>
+            <p style={{ color: '#4b5563', lineHeight: '1.6' }}>
+              {isIncomplete 
+                ? "To access your Digital ID, your membership status must be verified. Please complete your profile to unlock this feature."
+                : "Your membership application is currently under review. You will be able to access your Digital ID once your membership is approved."}
+            </p>
+            <div style={{ display: 'flex', gap: '1rem' }}>
+              {isIncomplete ? (
+                <button 
+                  type="button"
+                  onClick={() => navigate('/complete-profile')}
+                  style={{ 
+                    backgroundColor: '#2563eb', 
+                    color: 'white', 
+                    padding: '0.75rem 1.5rem', 
+                    borderRadius: '0.375rem',
+                    border: 'none',
+                    fontWeight: '500',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Complete Verification
+                </button>
+              ) : (
+                <button 
+                  type="button"
+                  onClick={() => navigate('/membership-form')}
+                  style={{ 
+                    backgroundColor: '#2563eb', 
+                    color: 'white', 
+                    padding: '0.75rem 1.5rem', 
+                    borderRadius: '0.375rem',
+                    border: 'none',
+                    fontWeight: '500',
+                    cursor: 'pointer'
+                  }}
+                >
+                  View Application
+                </button>
+              )}
+              <button 
+                type="button"
+                onClick={() => navigate('/dashboard')}
+                style={{ 
+                  backgroundColor: 'white', 
+                  color: '#374151', 
+                  padding: '0.75rem 1.5rem', 
+                  borderRadius: '0.375rem',
+                  border: '1px solid #d1d5db',
+                  fontWeight: '500',
+                  cursor: 'pointer'
+                }}
+              >
+                Back to Dashboard
+              </button>
+            </div>
           </div>
         </div>
       </AppLayout>

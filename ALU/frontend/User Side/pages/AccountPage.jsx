@@ -388,6 +388,9 @@ export default function AccountPage({ user, onLogout }) {
     { icon: Building2, label: 'Office Hours', value: 'Mon – Fri • 8:00 AM – 5:00 PM' },
   ];
 
+  const isVerified = user?.isApproved === 'active' || user?.isApproved === 'approved' || user?.isApproved === true || user?.isApproved === 1 || user?.isApproved === '1';
+  const isIncomplete = user?.isApproved === 'incomplete';
+
   return (
     <AppLayout title="Account" user={user} onLogout={onLogout}>
       <div className="account-page">
@@ -515,9 +518,9 @@ export default function AccountPage({ user, onLogout }) {
                   <Info size={18} />
                   Union News
                 </button>
-                <button type="button" onClick={() => navigate('/membership-form')}>
+                <button type="button" onClick={() => navigate(isIncomplete ? '/complete-profile' : '/membership-form')}>
                   <PenIcon size={18} />
-                  Update Profile
+                  {isIncomplete ? 'Complete Verification' : 'Update Profile'}
                 </button>
               </div>
             </div>
@@ -529,11 +532,16 @@ export default function AccountPage({ user, onLogout }) {
             <Shield size={22} />
           </div>
           <div>
-            <h3>Verified Member</h3>
-            <p>Your documents were confirmed on {formatDate(user.verifiedDate ?? user.membershipDate, { month: 'long', day: 'numeric', year: 'numeric' })}.</p>
+            <h3>{isVerified ? 'Verified Member' : (isIncomplete ? 'Verification Required' : 'Pending Approval')}</h3>
+            <p>{isVerified 
+                ? `Your documents were confirmed on ${formatDate(user.verifiedDate ?? user.membershipDate, { month: 'long', day: 'numeric', year: 'numeric' })}.`
+                : (isIncomplete 
+                    ? "Please complete your profile to verify your membership." 
+                    : "Your application is currently under review.")
+            }</p>
           </div>
-          <button type="button" className="button button--secondary" onClick={() => navigate('/digital-id')}>
-            View Digital ID
+          <button type="button" className="button button--secondary" onClick={() => navigate(isVerified ? '/digital-id' : (isIncomplete ? '/complete-profile' : '/membership-form'))}>
+            {isVerified ? 'View Digital ID' : (isIncomplete ? 'Complete Verification' : 'View Application')}
           </button>
         </section>
       </div>
