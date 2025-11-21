@@ -56,6 +56,9 @@ const SUPPORT_ENTRIES = [
 export default function DashboardPage({ user, notifications, dues, onLogout }) {
   const navigate = useNavigate();
 
+  const isVerified = user.isApproved === 'active' || user.isApproved === 'approved' || user.isApproved === true || user.isApproved === 1 || user.isApproved === '1';
+  const isIncomplete = user.isApproved === 'incomplete';
+
   const unreadCount = useMemo(
     () => notifications.filter((notification) => !notification.isRead).length,
     [notifications],
@@ -81,12 +84,25 @@ export default function DashboardPage({ user, notifications, dues, onLogout }) {
               </div>
             </div>
             <div className="dashboard-page__welcome-actions">
-              <button type="button" onClick={() => navigate('/digital-id')}>
-                View Digital ID
-              </button>
-              <button type="button" onClick={() => navigate('/membership-form')}>
-                Update Profile
-              </button>
+              {!isVerified ? (
+                <>
+                  <button type="button" className="button--primary" onClick={() => navigate('/complete-profile')}>
+                    Complete Verification
+                  </button>
+                  <button type="button" className="button--secondary" onClick={() => navigate('/digital-id')}>
+                    View Digital ID
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button type="button" onClick={() => navigate('/digital-id')}>
+                    View Digital ID
+                  </button>
+                  <button type="button" onClick={() => navigate('/complete-profile')}>
+                    Update Profile
+                  </button>
+                </>
+              )}
             </div>
           </div>
 
@@ -94,11 +110,11 @@ export default function DashboardPage({ user, notifications, dues, onLogout }) {
             <div className="dashboard-page__membership-header">
               <div>
                 <h3>Membership Status</h3>
-                <p>Active since {user.membershipDate}</p>
+                <p>{user.membershipDate ? `Active since ${new Date(user.membershipDate).toLocaleDateString()}` : (isIncomplete ? 'Verification Required' : 'Membership Pending')}</p>
               </div>
-              <div className={`dashboard-page__status-chip${user.isApproved === false ? ' dashboard-page__status-chip--pending' : ''}`}>
+              <div className={`dashboard-page__status-chip${!isVerified ? ' dashboard-page__status-chip--pending' : ''}`}>
                 <CheckCircle size={16} />
-                {user.isApproved === false ? 'Pending Approval' : 'Verified Member'}
+                {isVerified ? 'Verified Member' : (isIncomplete ? 'Incomplete' : 'Pending Approval')}
               </div>
             </div>
             <div className="dashboard-page__membership-details">
@@ -272,13 +288,19 @@ export default function DashboardPage({ user, notifications, dues, onLogout }) {
                   ))}
                 </ul>
               </div>
-              {user.isApproved === false && (
+              {!isVerified && (
                 <div className="dashboard-page__alert">
                   <AlertCircle size={16} />
-                  <p>Your membership is pending approval. Complete your profile to unlock all services.</p>
-                  <button type="button" onClick={() => navigate('/membership-form')}>
-                    Complete Profile
-                  </button>
+                  <p>
+                    {isIncomplete 
+                      ? "Your membership profile is incomplete. Please verify your details to unlock all services."
+                      : "Your membership is pending approval. You will be notified once approved."}
+                  </p>
+                  {isIncomplete && (
+                    <button type="button" onClick={() => navigate('/complete-profile')}>
+                      Complete Verification
+                    </button>
+                  )}
                 </div>
               )}
             </div>
@@ -299,7 +321,7 @@ DashboardPage.propTypes = {
     email: PropTypes.string,
     digitalId: PropTypes.string,
     qrCode: PropTypes.string,
-    isApproved: PropTypes.bool,
+    isApproved: PropTypes.oneOfType([PropTypes.bool, PropTypes.string]),
   }).isRequired,
   notifications: PropTypes.arrayOf(
     PropTypes.shape({

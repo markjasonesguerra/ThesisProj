@@ -1,4 +1,5 @@
 import PropTypes from 'prop-types';
+import { useNavigate } from 'react-router-dom';
 import {
   Calendar,
   ChevronRight,
@@ -6,6 +7,8 @@ import {
   Megaphone,
   Newspaper,
   Users,
+  Shield,
+  AlertCircle
 } from 'lucide-react';
 import AppLayout from '@components/AppLayout';
 import '../styles/news.css';
@@ -28,6 +31,104 @@ const formatDate = (value) => {
 };
 
 export default function NewsPage({ user, news, onLogout }) {
+  const navigate = useNavigate();
+  const isVerified = user?.isApproved === 'active' || user?.isApproved === 'approved' || user?.isApproved === true || user?.isApproved === 1 || user?.isApproved === '1';
+  const isIncomplete = user?.isApproved === 'incomplete';
+
+  if (!isVerified) {
+    return (
+      <AppLayout title="Union News" user={user} onLogout={onLogout}>
+        <div className="news-page">
+          <header className="news-page__hero">
+            <div className="news-page__hero-icon">
+              <Megaphone size={20} />
+            </div>
+            <div>
+              <h1>Latest Union Updates</h1>
+              <p>Stay informed about collective bargaining wins, upcoming assemblies, and member benefits.</p>
+            </div>
+          </header>
+
+          <div className="verification-prompt" style={{ 
+            padding: '4rem 2rem', 
+            textAlign: 'center', 
+            maxWidth: '600px', 
+            margin: '2rem auto',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: '1.5rem',
+            backgroundColor: '#f9fafb',
+            borderRadius: '0.5rem',
+            border: '1px solid #e5e7eb'
+          }}>
+            <div style={{ color: '#f59e0b' }}>
+              <AlertCircle size={48} />
+            </div>
+            <h2 style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#1f2937' }}>
+              {isIncomplete ? "Verification Required" : "Application Under Review"}
+            </h2>
+            <p style={{ color: '#4b5563', lineHeight: '1.6' }}>
+              {isIncomplete 
+                ? "Your membership profile is incomplete. Please verify your details to access union news and updates."
+                : "Your membership application is still under review. Once approved, you will gain access to union news."}
+            </p>
+            <div style={{ display: 'flex', gap: '1rem' }}>
+              {isIncomplete ? (
+                <button 
+                  type="button"
+                  onClick={() => navigate('/complete-profile')}
+                  style={{ 
+                    backgroundColor: '#2563eb', 
+                    color: 'white', 
+                    padding: '0.75rem 1.5rem', 
+                    borderRadius: '0.375rem',
+                    border: 'none',
+                    fontWeight: '500',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Complete Verification
+                </button>
+              ) : (
+                <button 
+                  type="button"
+                  onClick={() => navigate('/membership-form')}
+                  style={{ 
+                    backgroundColor: '#2563eb', 
+                    color: 'white', 
+                    padding: '0.75rem 1.5rem', 
+                    borderRadius: '0.375rem',
+                    border: 'none',
+                    fontWeight: '500',
+                    cursor: 'pointer'
+                  }}
+                >
+                  View Application
+                </button>
+              )}
+              <button 
+                type="button"
+                onClick={() => navigate('/dashboard')}
+                style={{ 
+                  backgroundColor: 'white', 
+                  color: '#374151', 
+                  padding: '0.75rem 1.5rem', 
+                  borderRadius: '0.375rem',
+                  border: '1px solid #d1d5db',
+                  fontWeight: '500',
+                  cursor: 'pointer'
+                }}
+              >
+                Back to Dashboard
+              </button>
+            </div>
+          </div>
+        </div>
+      </AppLayout>
+    );
+  }
+
   return (
     <AppLayout title="Union News" user={user} onLogout={onLogout}>
       <div className="news-page">

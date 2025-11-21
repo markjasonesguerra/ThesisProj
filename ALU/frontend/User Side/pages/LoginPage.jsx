@@ -9,16 +9,18 @@ import {
   Shield,
   ShieldCheck,
   UserPlus,
+  AlertCircle,
 } from 'lucide-react';
 import '../styles/auth.css';
 
-export default function LoginPage({ onSubmit, onCreateAccount, onBack }) {
+export default function LoginPage({ onSubmit, onCreateAccount, onBack, submitting, submitError }) {
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [method, setMethod] = useState('email');
 
   const handleSubmit = (event) => {
     event.preventDefault();
+    if (submitting) return;
     onSubmit({ identifier, password, method });
   };
 
@@ -87,12 +89,18 @@ export default function LoginPage({ onSubmit, onCreateAccount, onBack }) {
                   onClick={() => setMethod('mobile')}
                 >
                   <Phone size={16} />
-                  Mobile Login
+                  Phone Login
                 </button>
               </div>
 
               <form onSubmit={handleSubmit} className="auth-card__form">
-                <label htmlFor="identifier">{method === 'email' ? 'Email address' : 'Mobile number'}</label>
+                {submitError && (
+                  <div className="auth-card__alert auth-card__alert--error" style={{ color: 'red', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <AlertCircle size={16} />
+                    <span>{submitError}</span>
+                  </div>
+                )}
+                <label htmlFor="identifier">{method === 'email' ? 'Email address' : 'Phone number'}</label>
                 <div className="auth-card__input">
                   {method === 'email' ? <Mail size={18} /> : <Phone size={18} />}
                   <input
@@ -118,9 +126,9 @@ export default function LoginPage({ onSubmit, onCreateAccount, onBack }) {
                   />
                 </div>
 
-                <button type="submit" className="auth-card__submit">
-                  Continue
-                  <ArrowRight size={18} />
+                <button type="submit" className="auth-card__submit" disabled={submitting}>
+                  {submitting ? 'Signing in...' : 'Continue'}
+                  {!submitting && <ArrowRight size={18} />}
                 </button>
               </form>
 
@@ -148,8 +156,12 @@ LoginPage.propTypes = {
   onSubmit: PropTypes.func.isRequired,
   onCreateAccount: PropTypes.func.isRequired,
   onBack: PropTypes.func,
+  submitting: PropTypes.bool,
+  submitError: PropTypes.string,
 };
 
 LoginPage.defaultProps = {
   onBack: null,
+  submitting: false,
+  submitError: '',
 };

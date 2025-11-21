@@ -86,4 +86,97 @@ router.post('/:id/dues', async (req, res) => {
   }
 });
 
+router.put('/:id', async (req, res) => {
+  const userId = req.params.id;
+  const {
+    firstName,
+    middleInitial,
+    lastName,
+    email,
+    phone,
+    address,
+    dateOfBirth,
+    placeOfBirth,
+    maritalStatus,
+    numberOfChildren,
+    gender,
+    religion,
+    education,
+    company,
+    position,
+    department,
+    yearsEmployed,
+    unionAffiliation,
+    unionPosition,
+    emergencyContact = {},
+  } = req.body ?? {};
+
+  try {
+    await runQuery(
+      `UPDATE users SET
+        first_name = ?,
+        middle_initial = ?,
+        last_name = ?,
+        email = ?,
+        phone = ?,
+        address = ?,
+        date_of_birth = ?,
+        place_of_birth = ?,
+        marital_status = ?,
+        number_of_children = ?,
+        gender = ?,
+        religion = ?,
+        education = ?,
+        company = ?,
+        position = ?,
+        department = ?,
+        years_employed = ?,
+        union_affiliation = ?,
+        union_position = ?,
+        status = CASE WHEN status = 'incomplete' THEN 'pending' ELSE status END
+       WHERE id = ?`,
+      [
+        normalizeString(firstName),
+        normalizeString(middleInitial),
+        normalizeString(lastName),
+        normalizeString(email),
+        normalizeString(phone),
+        normalizeString(address),
+        normalizeString(dateOfBirth),
+        normalizeString(placeOfBirth),
+        normalizeString(maritalStatus),
+        normalizeNumber(numberOfChildren),
+        normalizeString(gender),
+        normalizeString(religion),
+        normalizeString(education),
+        normalizeString(company),
+        normalizeString(position),
+        normalizeString(department),
+        normalizeNumber(yearsEmployed),
+        normalizeString(unionAffiliation),
+        normalizeString(unionPosition),
+        userId,
+      ],
+    );
+
+    await runQuery(
+      `INSERT INTO user_emergency_contacts (user_id, name, relationship, phone, address)
+       VALUES (?, ?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE name = VALUES(name), relationship = VALUES(relationship), phone = VALUES(phone), address = VALUES(address)`,
+      [
+        userId,
+        normalizeString(emergencyContact.name),
+        normalizeString(emergencyContact.relationship),
+        normalizeString(emergencyContact.phone),
+        normalizeString(emergencyContact.address),
+      ],
+    );
+
+    res.json({ message: 'Profile updated successfully.' });
+  } catch (error) {
+    console.error('Update profile error:', error);
+    res.status(500).json({ message: 'Failed to update profile.', error: error.message });
+  }
+});
+
 export default router;

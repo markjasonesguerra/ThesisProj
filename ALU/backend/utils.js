@@ -40,6 +40,13 @@ export const mapUserRow = (row) => {
       }
     : null;
 
+  // If status is 'pending' but critical profile data (like dateOfBirth) is missing,
+  // treat as 'incomplete' so the frontend prompts them to complete the profile.
+  let status = row.isApproved;
+  if (status === 'pending' && !row.dateOfBirth) {
+    status = 'incomplete';
+  }
+
   return {
     id: row.id,
     firstName: row.firstName,
@@ -64,7 +71,7 @@ export const mapUserRow = (row) => {
     membershipDate: row.membershipDate,
     digitalId: row.digitalId,
     profilePicture: row.profilePictureUrl,
-    isApproved: Boolean(row.isApproved),
+    isApproved: status,
     emergencyContact,
   };
 };

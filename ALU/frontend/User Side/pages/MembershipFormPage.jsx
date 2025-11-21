@@ -79,7 +79,8 @@ const inputValue = (value) => {
 
 export default function MembershipFormPage({ user, onLogout }) {
   const navigate = useNavigate();
-  const isApproved = Boolean(user?.isApproved);
+  const isApproved = user?.isApproved === 'active' || user?.isApproved === 'approved' || user?.isApproved === true || user?.isApproved === 1 || user?.isApproved === '1';
+  const isIncomplete = user?.isApproved === 'incomplete' || ((user?.isApproved === 'pending' || user?.isApproved === 0 || user?.isApproved === false) && !user?.dateOfBirth);
   const emergencyContact = user?.emergencyContact ?? {};
 
   const fullName = useMemo(
@@ -172,11 +173,13 @@ export default function MembershipFormPage({ user, onLogout }) {
                   {bannerIcon}
                 </span>
                 <div>
-                  <h2>{isApproved ? "Membership Approved" : "Membership Pending Approval"}</h2>
+                  <h2>{isApproved ? "Membership Approved" : (isIncomplete ? "Verification Required" : "Membership Pending Approval")}</h2>
                   <p>
                     {isApproved
                       ? "Your membership has been approved. Below is your official registration information."
-                      : "Your membership application is under review. You can review the submitted information while awaiting approval."}
+                      : (isIncomplete 
+                          ? "Your membership profile is incomplete. Please verify your details to submit your application."
+                          : "Your membership application is under review. You can review the submitted information while awaiting approval.")}
                   </p>
                   <div className="membership-form__banner-meta">
                     <span>
@@ -189,7 +192,7 @@ export default function MembershipFormPage({ user, onLogout }) {
                 </div>
               </div>
               <span className={`membership-form__banner-badge membership-form__banner-badge--${bannerTone}`}>
-                {isApproved ? "APPROVED" : "PENDING"}
+                {isApproved ? "APPROVED" : (isIncomplete ? "INCOMPLETE" : "PENDING")}
               </span>
             </section>
           )}
@@ -487,7 +490,7 @@ MembershipFormPage.propTypes = {
     unionAffiliation: PropTypes.string,
     unionPosition: PropTypes.string,
     membershipDate: PropTypes.string,
-    isApproved: PropTypes.bool,
+    isApproved: PropTypes.oneOfType([PropTypes.bool, PropTypes.string]),
     profilePicture: PropTypes.string,
     digitalId: PropTypes.string,
     dateOfBirth: PropTypes.string,

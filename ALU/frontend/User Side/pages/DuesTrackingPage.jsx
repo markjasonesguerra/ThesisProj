@@ -1,7 +1,9 @@
 import { useMemo } from 'react';
 import PropTypes from 'prop-types';
+import { useNavigate } from 'react-router-dom';
 import {
   AlertTriangle,
+  AlertCircle,
   Banknote,
   CalendarDays,
   CheckCircle2,
@@ -71,6 +73,7 @@ const getNextPayment = (records) => {
 };
 
 export default function DuesTrackingPage({ user, dues, onLogout }) {
+  const navigate = useNavigate();
   const isApproved = user?.isApproved !== false;
 
   const totals = useMemo(() => {
@@ -105,29 +108,97 @@ export default function DuesTrackingPage({ user, dues, onLogout }) {
   const yearlyProjection = monthlyAmount * 12;
   const nextPayment = getNextPayment(dues);
 
-  if (!isApproved) {
+  const isVerified = user?.isApproved === 'active' || user?.isApproved === 'approved' || user?.isApproved === true || user?.isApproved === 1 || user?.isApproved === '1';
+  const isIncomplete = user?.isApproved === 'incomplete' || ((user?.isApproved === 'pending' || user?.isApproved === 0 || user?.isApproved === false) && !user?.dateOfBirth);
+
+  if (!isVerified) {
     return (
       <AppLayout title="Dues Tracking" user={user} onLogout={onLogout}>
-        <div className="dues-pending">
-          <div className="dues-pending__icon">
-            <Shield size={48} />
-          </div>
-          <h2>Dues history is not available yet</h2>
-          <p>
-            Your membership application is still under review. Once the finance team approves your
-            membership, you will gain access to payment history and contribution monitoring.
-          </p>
-          <div className="dues-pending__status">
-            <span>Application Status</span>
-            <strong>Pending Approval</strong>
-            <small>Member ID: {user?.digitalId ?? 'ALU-000000'}</small>
-          </div>
-          <div className="dues-pending__actions">
-            <button type="button" className="button button--primary">View Application Status</button>
-            <button type="button" className="button button--secondary">Back to Dashboard</button>
-          </div>
-          <div className="dues-pending__footer">
-            Questions about dues? Contact ALU Finance at (02) 8123-4567 or finance@alu.org.ph
+        <div className="dues-page">
+          <header className="dues-page__hero">
+            <div className="dues-page__hero-icon">
+              <ShieldCheck size={22} />
+            </div>
+            <div>
+              <h1>Your contribution history</h1>
+              <p>Monitor monthly union dues, keep track of payroll deductions, and stay current with payment schedules.</p>
+            </div>
+          </header>
+
+          <div className="verification-prompt" style={{ 
+            padding: '4rem 2rem', 
+            textAlign: 'center', 
+            maxWidth: '600px', 
+            margin: '2rem auto',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: '1.5rem',
+            backgroundColor: '#f9fafb',
+            borderRadius: '0.5rem',
+            border: '1px solid #e5e7eb'
+          }}>
+            <div style={{ color: '#f59e0b' }}>
+              <AlertCircle size={48} />
+            </div>
+            <h2 style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#1f2937' }}>
+              {isIncomplete ? "Verification Required" : "Application Under Review"}
+            </h2>
+            <p style={{ color: '#4b5563', lineHeight: '1.6' }}>
+              {isIncomplete 
+                ? "To access your dues history, your membership status must be verified. Please complete your profile to unlock this feature."
+                : "Your membership application is currently under review. You will be able to access your dues history once your membership is approved."}
+            </p>
+            <div style={{ display: 'flex', gap: '1rem' }}>
+              {isIncomplete ? (
+                <button 
+                  type="button"
+                  onClick={() => navigate('/complete-profile')}
+                  style={{ 
+                    backgroundColor: '#2563eb', 
+                    color: 'white', 
+                    padding: '0.75rem 1.5rem', 
+                    borderRadius: '0.375rem',
+                    border: 'none',
+                    fontWeight: '500',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Complete Verification
+                </button>
+              ) : (
+                <button 
+                  type="button"
+                  onClick={() => navigate('/membership-form')}
+                  style={{ 
+                    backgroundColor: '#2563eb', 
+                    color: 'white', 
+                    padding: '0.75rem 1.5rem', 
+                    borderRadius: '0.375rem',
+                    border: 'none',
+                    fontWeight: '500',
+                    cursor: 'pointer'
+                  }}
+                >
+                  View Application
+                </button>
+              )}
+              <button 
+                type="button"
+                onClick={() => navigate('/dashboard')}
+                style={{ 
+                  backgroundColor: 'white', 
+                  color: '#374151', 
+                  padding: '0.75rem 1.5rem', 
+                  borderRadius: '0.375rem',
+                  border: '1px solid #d1d5db',
+                  fontWeight: '500',
+                  cursor: 'pointer'
+                }}
+              >
+                Back to Dashboard
+              </button>
+            </div>
           </div>
         </div>
       </AppLayout>

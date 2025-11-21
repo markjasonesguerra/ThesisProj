@@ -84,6 +84,7 @@ const initialFormState = {
   religion: "",
   education: "",
   email: "",
+  password: "",
   phone: "",
   company: "",
   position: "",
@@ -104,9 +105,19 @@ const initialFormState = {
   },
 };
 
-export default function RegistrationPage({ onSubmit, onBack, submitting, submitError }) {
-  const [form, setForm] = useState(initialFormState);
-  const [profilePreview, setProfilePreview] = useState(null);
+export default function RegistrationPage({ onSubmit, onBack, submitting, submitError, initialData }) {
+  const [form, setForm] = useState({ ...initialFormState, ...initialData });
+  const [profilePreview, setProfilePreview] = useState(initialData?.profilePicture || null);
+
+  // Update form if initialData changes
+  useMemo(() => {
+    if (initialData) {
+      setForm((prev) => ({ ...prev, ...initialData }));
+      if (initialData.profilePicture) {
+        setProfilePreview(initialData.profilePicture);
+      }
+    }
+  }, [initialData]);
 
   const ageValue = useMemo(() => computeAge(form.dateOfBirth), [form.dateOfBirth]);
 
@@ -180,6 +191,7 @@ export default function RegistrationPage({ onSubmit, onBack, submitting, submitE
     if (!requiredString(form.address)) return true;
     if (!requiredString(form.education)) return true;
     if (!requiredString(form.email)) return true;
+    if (!requiredString(form.password)) return true;
     if (!requiredString(form.phone)) return true;
     if (!requiredString(form.company)) return true;
     if (!requiredString(form.position)) return true;
@@ -227,6 +239,7 @@ export default function RegistrationPage({ onSubmit, onBack, submitting, submitE
       middleInitial: form.middleInitial.trim() || null,
       lastName: form.lastName.trim(),
       email: form.email.trim(),
+      password: form.password,
       phone: form.phone.trim(),
       address: form.address.trim(),
       dateOfBirth: dobIso,
@@ -417,11 +430,18 @@ export default function RegistrationPage({ onSubmit, onBack, submitting, submitE
               </label>
             </div>
 
-            <div className="membership-form__fields membership-form__fields--cols-3">
+            <div className="membership-form__fields membership-form__fields--cols-2">
               <label className="membership-form__field">
                 <span>Email Address *</span>
                 <input name="email" type="email" value={form.email} onChange={handleInputChange} required />
               </label>
+              <label className="membership-form__field">
+                <span>Password *</span>
+                <input name="password" type="password" value={form.password} onChange={handleInputChange} required />
+              </label>
+            </div>
+
+            <div className="membership-form__fields membership-form__fields--cols-2">
               <label className="membership-form__field">
                 <span>Contact No. *</span>
                 <input name="phone" value={form.phone} onChange={handleInputChange} placeholder="(+63) 900 000 0000" required />
@@ -642,9 +662,11 @@ RegistrationPage.propTypes = {
   onBack: PropTypes.func.isRequired,
   submitting: PropTypes.bool,
   submitError: PropTypes.string,
+  initialData: PropTypes.object,
 };
 
 RegistrationPage.defaultProps = {
   submitting: false,
   submitError: "",
+  initialData: null,
 };
