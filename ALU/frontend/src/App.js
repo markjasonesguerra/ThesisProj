@@ -22,7 +22,6 @@ import AdminFinalApprovalQueue from '@adminPages/AdminFinalApprovalQueue.jsx';
 import TicketDetail from '@adminPages/TicketDetail.jsx';
 import ReportsAnalytics from '@adminPages/ReportsAnalytics.jsx';
 import AuditLog from '@adminPages/AuditLog.jsx';
-import AISettings from '@adminPages/AISettings.jsx';
 import BenefitsAssistance from '@adminPages/BenefitsAssistance.jsx';
 import BenefitsAssistanceTriage from '@adminPages/BenefitsAssistanceTriage.jsx';
 import DuesFinance from '@adminPages/DuesFinance.jsx';
@@ -349,7 +348,6 @@ function App() {
           <Route path="ticket-detail" element={<TicketDetail />} />
           <Route path="reports-analytics" element={<ReportsAnalytics />} />
           <Route path="audit-log" element={<AuditLog />} />
-          <Route path="ai-settings" element={<AISettings />} />
           <Route path="benefits-assistance" element={<BenefitsAssistance />} />
           <Route path="benefits-triage" element={<BenefitsAssistanceTriage />} />
           <Route path="dues-finance" element={<DuesFinance />} />

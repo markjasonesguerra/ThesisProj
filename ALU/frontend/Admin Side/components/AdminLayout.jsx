@@ -14,7 +14,6 @@ const navToPath = {
   events: "event-management",
   reports: "reports-analytics",
   audit: "audit-log",
-  ai: "ai-settings",
   security: "id-card-management",
   settings: "admin-settings",
 };

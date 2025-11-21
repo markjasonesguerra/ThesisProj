@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
   Building2,
@@ -21,6 +21,23 @@ import {
 } from "lucide-react";
 import "../styles/admin-base.css";
 import client from "../../src/api/client";
+
+const DEFAULT_ADMIN_ID = (() => {
+  const envValue = process.env.REACT_APP_DEFAULT_ADMIN_ID;
+  const parsed = envValue ? Number.parseInt(envValue, 10) : Number.NaN;
+  if (Number.isFinite(parsed) && parsed > 0) {
+    return parsed;
+  }
+  return 1;
+})();
+
+const DEFAULT_ADMIN_NAME = (() => {
+  const envValue = process.env.REACT_APP_DEFAULT_ADMIN_NAME;
+  if (typeof envValue === "string" && envValue.trim().length) {
+    return envValue.trim();
+  }
+  return "Admin Portal";
+})();
 
 const rejectionReasons = [
   "Incomplete documentation",
@@ -52,6 +69,25 @@ export default function RegistrationReview() {
   const [error, setError] = useState(null);
   const [previewDocument, setPreviewDocument] = useState(null);
   const [copyStatus, setCopyStatus] = useState("");
+  const [actionErrors, setActionErrors] = useState({ approve: "", reject: "" });
+  const [currentAction, setCurrentAction] = useState(null);
+
+  const isApproveProcessing = currentAction === "approve";
+  const isRejectProcessing = currentAction === "reject";
+
+  const applyQueuePayload = useCallback((payload) => {
+    const nextQueue = payload?.queue ?? [];
+    setQueue(nextQueue);
+    setSummary(payload?.summary ?? defaultSummary);
+  }, []);
+
+  const buildActionErrorMessage = useCallback((err, fallback) => {
+    if (!err) return fallback;
+    const payload = err?.response?.data ?? {};
+    const candidates = [payload.message, payload.error, err.message, fallback];
+    const resolved = candidates.find((candidate) => typeof candidate === "string" && candidate.trim().length);
+    return resolved ?? fallback;
+  }, []);
 
   useEffect(() => {
     let subscribed = true;
@@ -62,10 +98,7 @@ export default function RegistrationReview() {
         setError(null);
         const response = await client.get("/api/admin/registrations/review");
         if (!subscribed) return;
-        const nextQueue = response.data?.queue ?? [];
-        setQueue(nextQueue);
-        setSummary(response.data?.summary ?? defaultSummary);
-        setSelectedId(nextQueue[0]?.id ?? null);
+        applyQueuePayload(response.data ?? {});
       } catch (err) {
         if (!subscribed) return;
         setError(err?.response?.data?.message ?? "Unable to load registration queue.");
@@ -83,7 +116,7 @@ export default function RegistrationReview() {
     return () => {
       subscribed = false;
     };
-  }, []);
+  }, [applyQueuePayload]);
 
   useEffect(() => {
     if (!queue.length) {
@@ -166,13 +199,67 @@ export default function RegistrationReview() {
     setCustomReason("");
   };
 
-  const handleApprove = () => {
+  const closeApproveDialog = () => {
+    setActionErrors((prev) => ({ ...prev, approve: "" }));
     setShowApproveDialog(false);
   };
 
-  const handleReject = () => {
-    setShowRejectDialog(false);
+  const closeRejectDialog = () => {
+    setActionErrors((prev) => ({ ...prev, reject: "" }));
     resetRejectionForm();
+    setShowRejectDialog(false);
+  };
+
+  const handleApprove = async () => {
+    if (!selectedRegistration?.userId) return;
+    setActionErrors((prev) => ({ ...prev, approve: "" }));
+    setCurrentAction("approve");
+    try {
+      const response = await client.post(`/api/admin/registrations/${selectedRegistration.userId}/approve`, {
+        actorAdminId: DEFAULT_ADMIN_ID,
+        actorName: DEFAULT_ADMIN_NAME,
+      });
+      applyQueuePayload(response.data ?? {});
+      closeApproveDialog();
+    } catch (err) {
+      setActionErrors((prev) => ({
+        ...prev,
+        approve: buildActionErrorMessage(err, "Unable to approve registration. Please try again."),
+      }));
+    } finally {
+      setCurrentAction(null);
+    }
+  };
+
+  const handleReject = async () => {
+    if (!selectedRegistration?.userId) return;
+    const finalReason =
+      rejectionReason === "Other (specify below)" ? customReason.trim() : rejectionReason;
+
+    if (!finalReason) {
+      setActionErrors((prev) => ({ ...prev, reject: "Please provide a rejection reason." }));
+      return;
+    }
+
+    setActionErrors((prev) => ({ ...prev, reject: "" }));
+    setCurrentAction("reject");
+    try {
+      const response = await client.post(`/api/admin/registrations/${selectedRegistration.userId}/reject`, {
+        reason: finalReason,
+        category: rejectionReason,
+        actorAdminId: DEFAULT_ADMIN_ID,
+        actorName: DEFAULT_ADMIN_NAME,
+      });
+      applyQueuePayload(response.data ?? {});
+      closeRejectDialog();
+    } catch (err) {
+      setActionErrors((prev) => ({
+        ...prev,
+        reject: buildActionErrorMessage(err, "Unable to reject registration. Please try again."),
+      }));
+    } finally {
+      setCurrentAction(null);
+    }
   };
 
   const fileBaseUrl = (() => {
@@ -385,13 +472,23 @@ export default function RegistrationReview() {
                   </div>
                 </div>
                 <div className="admin-registration-detail__actions">
-                  <button type="button" className="admin-button" onClick={() => setShowRejectDialog(true)}>
+                  <button
+                    type="button"
+                    className="admin-button"
+                    onClick={() => {
+                      setActionErrors((prev) => ({ ...prev, reject: "" }));
+                      setShowRejectDialog(true);
+                    }}
+                  >
                     <X size={16} /> Reject
                   </button>
                   <button
                     type="button"
                     className="admin-button is-primary"
-                    onClick={() => setShowApproveDialog(true)}
+                    onClick={() => {
+                      setActionErrors((prev) => ({ ...prev, approve: "" }));
+                      setShowApproveDialog(true);
+                    }}
                   >
                     <Check size={16} /> Approve registration
                   </button>
@@ -651,7 +748,7 @@ export default function RegistrationReview() {
 
       {showApproveDialog ? (
         <div className="admin-dialog" role="dialog" aria-modal="true">
-          <div className="admin-dialog__backdrop" onClick={() => setShowApproveDialog(false)} />
+          <div className="admin-dialog__backdrop" onClick={closeApproveDialog} />
           <div className="admin-dialog__panel">
             <header className="admin-dialog__header">
               <h3>Approve registration</h3>
@@ -664,13 +761,21 @@ export default function RegistrationReview() {
                 <li>Activate the member account</li>
                 <li>Add member to the active directory</li>
               </ul>
+              {actionErrors.approve ? (
+                <div className="admin-callout is-danger">{actionErrors.approve}</div>
+              ) : null}
             </div>
             <footer className="admin-dialog__footer">
-              <button type="button" className="admin-button" onClick={() => setShowApproveDialog(false)}>
+              <button type="button" className="admin-button" onClick={closeApproveDialog}>
                 Cancel
               </button>
-              <button type="button" className="admin-button is-primary" onClick={handleApprove}>
-                Approve registration
+              <button
+                type="button"
+                className="admin-button is-primary"
+                onClick={handleApprove}
+                disabled={isApproveProcessing}
+              >
+                {isApproveProcessing ? "Processing..." : "Approve registration"}
               </button>
             </footer>
           </div>
@@ -679,7 +784,7 @@ export default function RegistrationReview() {
 
       {showRejectDialog ? (
         <div className="admin-dialog" role="dialog" aria-modal="true">
-          <div className="admin-dialog__backdrop" onClick={() => setShowRejectDialog(false)} />
+          <div className="admin-dialog__backdrop" onClick={closeRejectDialog} />
           <div className="admin-dialog__panel">
             <header className="admin-dialog__header">
               <h3>Reject registration</h3>
@@ -706,13 +811,21 @@ export default function RegistrationReview() {
                   />
                 </label>
               ) : null}
+              {actionErrors.reject ? (
+                <div className="admin-callout is-danger">{actionErrors.reject}</div>
+              ) : null}
             </div>
             <footer className="admin-dialog__footer">
-              <button type="button" className="admin-button" onClick={() => setShowRejectDialog(false)}>
+              <button type="button" className="admin-button" onClick={closeRejectDialog}>
                 Cancel
               </button>
-              <button type="button" className="admin-button is-danger" onClick={handleReject}>
-                Reject registration
+              <button
+                type="button"
+                className="admin-button is-danger"
+                onClick={handleReject}
+                disabled={isRejectProcessing}
+              >
+                {isRejectProcessing ? "Processing..." : "Reject registration"}
               </button>
             </footer>
           </div>

@@ -9,7 +9,7 @@ Express server that exposes authentication and membership endpoints for the ALUz
    ```powershell
    Set-Location -Path 'd:\Thesis\ALU\backend'; npm install
    ```
-3. Run the development server with hot reload:
+  3. Run the development server with hot reload:
    ```powershell
    npm run dev
    ```

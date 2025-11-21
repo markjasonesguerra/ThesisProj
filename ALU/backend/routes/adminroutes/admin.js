@@ -1,5 +1,5 @@
 import express from 'express';
-import { runQuery } from '../../db.js';
+import { runQuery, withTransaction } from '../../db.js';
 import {
   MEMBER_STATUS_LABEL,
   APPROVAL_STATUS_LABEL,
@@ -16,11 +16,269 @@ import {
 } from './helpers.js';
 import registerDashboardRoute from './dashboard.js';
 import registerMemberRoutes from './members.js';
+import registerAuditRoutes from './audit.js';
+import registerAIRoutes from './ai.js';
+import registerSecurityRoutes from './security.js';
+import registerAdminSettingsRoutes from './settings.js';
+import registerIdCardRoutes from './idcards.js';
+import registerTicketsRoutes from './tickets.js';
+import registerBenefitsRoutes from './benefits.js';
+import registerEventsRoutes from './events.js';
+import registerReportsRoutes from './reports.js';
+import registerTopBarRoutes from './topbar.js';
+import registerQuickSearchRoutes from './quicksearch.js';
 
 const router = express.Router();
 
+const buildHttpError = (statusCode, message) => {
+  const error = new Error(message);
+  error.statusCode = statusCode;
+  return error;
+};
+
+const parseRegistrationUserId = (value) => {
+  if (value === null || value === undefined) {
+    return Number.NaN;
+  }
+  const normalized = value.toString().trim();
+  if (!normalized.length) {
+    return Number.NaN;
+  }
+  if (/^REG-\d+$/i.test(normalized)) {
+    return Number.parseInt(normalized.replace(/^REG-/i, ''), 10);
+  }
+  const parsed = Number.parseInt(normalized, 10);
+  return Number.isFinite(parsed) ? parsed : Number.NaN;
+};
+
 registerDashboardRoute(router);
 registerMemberRoutes(router);
+registerAuditRoutes(router);
+registerAIRoutes(router);
+registerSecurityRoutes(router);
+registerAdminSettingsRoutes(router);
+registerIdCardRoutes(router);
+registerTicketsRoutes(router);
+registerBenefitsRoutes(router);
+registerEventsRoutes(router);
+registerReportsRoutes(router);
+registerTopBarRoutes(router);
+registerQuickSearchRoutes(router);
+
+const loadRegistrationQueue = async () => {
+  const rows = await runQuery(`
+      SELECT
+        u.id,
+        up.first_name AS firstName,
+        up.middle_initial AS middleInitial,
+        up.last_name AS lastName,
+        u.email,
+        u.phone,
+        ue.company,
+        ue.department,
+        ue.position,
+        ue.union_affiliation AS unionAffiliation,
+        CONCAT_WS(', ', NULLIF(up.address_line1, ''), NULLIF(up.city, ''), NULLIF(up.province, '')) AS address,
+        ue.years_employed AS yearsEmployed,
+        u.created_at AS createdAt,
+        u.status AS accountStatus,
+        rf.submitted_at AS submittedAt,
+        rf.remarks AS registrationRemarks,
+        rf.address_proof AS addressProof,
+        rf.employment_proof AS employmentProof,
+        rf.id_document AS idDocument,
+        COALESCE(dup.email_count, 0) AS emailDuplicateCount,
+        COALESCE(docStats.document_count, 0) AS documentCount,
+        COALESCE(docStats.verified_count, 0) AS verifiedDocumentCount
+      FROM users u
+      LEFT JOIN user_profiles up ON up.user_id = u.id
+      LEFT JOIN user_employment ue ON ue.user_id = u.id
+      LEFT JOIN registration_forms rf ON rf.user_id = u.id
+      LEFT JOIN (
+        SELECT email, COUNT(*) AS email_count
+        FROM users
+        WHERE email IS NOT NULL AND email <> ''
+        GROUP BY email
+        HAVING COUNT(*) > 1
+      ) dup ON dup.email = u.email
+      LEFT JOIN (
+        SELECT user_id,
+               COUNT(*) AS document_count,
+               SUM(CASE WHEN verified_at IS NOT NULL THEN 1 ELSE 0 END) AS verified_count
+        FROM user_documents
+        GROUP BY user_id
+      ) docStats ON docStats.user_id = u.id
+      WHERE COALESCE(u.status, 'pending') IN ('pending', 'email_verified', 'under_review')
+      ORDER BY COALESCE(rf.submitted_at, u.created_at) DESC;
+    `);
+
+  const userIds = rows.map((row) => row.id);
+  let documentsByUser = {};
+
+  if (userIds.length) {
+    const placeholders = userIds.map(() => '?').join(', ');
+    const documentRows = await runQuery(
+      `SELECT
+           id,
+           user_id AS userId,
+           category,
+           file_path AS filePath,
+           mime_type AS mimeType,
+           uploaded_at AS uploadedAt,
+           verified_at AS verifiedAt
+         FROM user_documents
+         WHERE user_id IN (${placeholders})`,
+      userIds,
+    );
+
+    documentsByUser = documentRows.reduce((accumulator, doc) => {
+      if (!accumulator[doc.userId]) {
+        accumulator[doc.userId] = [];
+      }
+      accumulator[doc.userId].push(doc);
+      return accumulator;
+    }, {});
+  }
+
+  const queue = rows.map((row) => {
+    const fullName = [row.firstName, row.middleInitial, row.lastName].filter(Boolean).join(' ').trim();
+    const submittedDate = row.submittedAt ?? row.createdAt;
+    const duplicateFlag = Number(row.emailDuplicateCount ?? 0) > 1;
+    const hasEmployment = Boolean(row.company) && Boolean(row.position);
+    const userDocs = documentsByUser[row.id] ?? [];
+
+    const findDocByCategory = (category) => userDocs.find((doc) => doc.category === category) ?? null;
+    const idPhotoDoc = findDocByCategory('id_photo');
+    const employmentDoc = findDocByCategory('employment_proof');
+
+    const registrationFormEntry = {
+      key: 'registration_form',
+      label: 'Registration form',
+      filePath: row.addressProof ?? null,
+      source: row.addressProof ? 'registration_forms' : null,
+      verifiedAt: null,
+    };
+
+    const employmentEntry = {
+      key: 'employment_certificate',
+      label: 'Employment certificate',
+      filePath: employmentDoc?.filePath ?? row.employmentProof ?? null,
+      source: employmentDoc ? 'user_documents' : row.employmentProof ? 'registration_forms' : null,
+      verifiedAt: employmentDoc?.verifiedAt ?? null,
+    };
+
+    const idPhotoEntry = {
+      key: 'id_photo',
+      label: 'ID photo',
+      filePath: idPhotoDoc?.filePath ?? row.idDocument ?? null,
+      source: idPhotoDoc ? 'user_documents' : row.idDocument ? 'registration_forms' : null,
+      verifiedAt: idPhotoDoc?.verifiedAt ?? null,
+    };
+
+    const documentFiles = [registrationFormEntry, employmentEntry, idPhotoEntry].map((entry) => ({
+      ...entry,
+      status: entry.filePath
+        ? entry.verifiedAt
+          ? 'Uploaded (verified)'
+          : 'Uploaded (pending verification)'
+        : 'Missing upload',
+    }));
+
+    const documentsComplete = Boolean(employmentEntry.filePath && idPhotoEntry.filePath);
+    const phoneValid = Boolean(row.phone);
+    const emailValid = Boolean(row.email && row.email.includes('@'));
+    const hasUnion = Boolean(row.unionAffiliation);
+    const statusLabel = (() => {
+      switch (row.accountStatus) {
+        case 'under_review':
+          return 'Under Review';
+        case 'email_verified':
+          return 'Email Verified';
+        default:
+          return 'Pending Review';
+      }
+    })();
+
+    const priority = (() => {
+      if (row.accountStatus === 'under_review' || duplicateFlag) return 'High';
+      if (!documentsComplete || !phoneValid) return 'Normal';
+      return 'Normal';
+    })();
+
+    const timeline = [];
+    if (submittedDate) {
+      timeline.push({ time: formatDisplayDate(submittedDate), detail: 'Registration submitted by member' });
+    }
+    if (row.accountStatus === 'email_verified') {
+      timeline.push({ time: formatDisplayDate(row.createdAt), detail: 'Email verification completed' });
+    }
+    if (row.accountStatus === 'under_review') {
+      timeline.push({ time: formatDisplayDate(row.createdAt), detail: 'Queued for manual review' });
+    }
+    if (row.registrationRemarks) {
+      timeline.push({ time: 'Notes', detail: row.registrationRemarks });
+    }
+
+    const riskNotes = [];
+    if (duplicateFlag) {
+      riskNotes.push('Potential duplicate detected based on email');
+    }
+    if (!phoneValid) {
+      riskNotes.push('Phone number missing or invalid');
+    }
+    if (!documentsComplete || !hasEmployment) {
+      riskNotes.push('Employment documentation incomplete');
+    }
+    if (!riskNotes.length) {
+      riskNotes.push('No risk indicators detected by system checks');
+    }
+
+    return {
+      id: `REG-${String(row.id).padStart(6, '0')}`,
+      userId: row.id,
+      fullName: fullName || 'Pending Member',
+      email: row.email,
+      phone: row.phone,
+      company: row.company,
+      department: row.department,
+      position: row.position,
+      unionAffiliation: row.unionAffiliation,
+      address: row.address,
+      yearsEmployed: row.yearsEmployed,
+      membershipType: hasUnion ? 'Regular' : 'Associate',
+      payrollConsent: null,
+      submittedDate,
+      status: statusLabel,
+      priority,
+      duplicateFlag,
+      documents: {
+        registrationForm: registrationFormEntry.filePath ? 'Uploaded' : 'Missing',
+        employmentCertificate: employmentEntry.filePath ? 'Uploaded' : 'Missing',
+        idPhoto: idPhotoEntry.filePath ? 'Uploaded' : 'Pending upload',
+        unionForm: hasUnion ? 'Union affiliation stated' : 'Pending confirmation',
+      },
+      documentFiles,
+      validationChecks: {
+        emailValid,
+        phoneValid,
+        documentsComplete,
+        companyVerified: Boolean(row.company),
+        noDuplicates: !duplicateFlag,
+      },
+      riskNotes,
+      timeline,
+    };
+  });
+
+  const summary = {
+    totalPending: queue.length,
+    highPriority: queue.filter((item) => item.priority === 'High').length,
+    duplicates: queue.filter((item) => item.duplicateFlag).length,
+    docIssues: queue.filter((item) => !item.validationChecks.documentsComplete).length,
+  };
+
+  return { summary, queue };
+};
 
 router.get('/approvals/final-queue', async (_req, res) => {
   try {
@@ -184,221 +442,174 @@ router.get('/dues/overview', async (_req, res) => {
 
 router.get('/registrations/review', async (_req, res) => {
   try {
-    const rows = await runQuery(`
-      SELECT
-        u.id,
-        up.first_name AS firstName,
-        up.middle_initial AS middleInitial,
-        up.last_name AS lastName,
-        u.email,
-        u.phone,
-        ue.company,
-        ue.department,
-        ue.position,
-        ue.union_affiliation AS unionAffiliation,
-        CONCAT_WS(', ', NULLIF(up.address_line1, ''), NULLIF(up.city, ''), NULLIF(up.province, '')) AS address,
-        ue.years_employed AS yearsEmployed,
-        u.created_at AS createdAt,
-        u.status AS accountStatus,
-        rf.submitted_at AS submittedAt,
-        rf.remarks AS registrationRemarks,
-        rf.address_proof AS addressProof,
-        rf.employment_proof AS employmentProof,
-        rf.id_document AS idDocument,
-        COALESCE(dup.email_count, 0) AS emailDuplicateCount,
-        COALESCE(docStats.document_count, 0) AS documentCount,
-        COALESCE(docStats.verified_count, 0) AS verifiedDocumentCount
-      FROM users u
-      LEFT JOIN user_profiles up ON up.user_id = u.id
-      LEFT JOIN user_employment ue ON ue.user_id = u.id
-      LEFT JOIN registration_forms rf ON rf.user_id = u.id
-      LEFT JOIN (
-        SELECT email, COUNT(*) AS email_count
-        FROM users
-        WHERE email IS NOT NULL AND email <> ''
-        GROUP BY email
-        HAVING COUNT(*) > 1
-      ) dup ON dup.email = u.email
-      LEFT JOIN (
-        SELECT user_id,
-               COUNT(*) AS document_count,
-               SUM(CASE WHEN verified_at IS NOT NULL THEN 1 ELSE 0 END) AS verified_count
-        FROM user_documents
-        GROUP BY user_id
-      ) docStats ON docStats.user_id = u.id
-      WHERE u.status IN ('pending', 'email_verified', 'under_review')
-         OR rf.id IS NOT NULL
-      ORDER BY COALESCE(rf.submitted_at, u.created_at) DESC;
-    `);
-
-    const userIds = rows.map((row) => row.id);
-    let documentsByUser = {};
-
-    if (userIds.length) {
-      const placeholders = userIds.map(() => '?').join(', ');
-      const documentRows = await runQuery(
-        `SELECT
-           id,
-           user_id AS userId,
-           category,
-           file_path AS filePath,
-           mime_type AS mimeType,
-           uploaded_at AS uploadedAt,
-           verified_at AS verifiedAt
-         FROM user_documents
-         WHERE user_id IN (${placeholders})`,
-        userIds,
-      );
-
-      documentsByUser = documentRows.reduce((accumulator, doc) => {
-        if (!accumulator[doc.userId]) {
-          accumulator[doc.userId] = [];
-        }
-        accumulator[doc.userId].push(doc);
-        return accumulator;
-      }, {});
-    }
-
-    const queue = rows.map((row) => {
-      const fullName = [row.firstName, row.middleInitial, row.lastName].filter(Boolean).join(' ').trim();
-      const submittedDate = row.submittedAt ?? row.createdAt;
-      const duplicateFlag = Number(row.emailDuplicateCount ?? 0) > 1;
-      const hasEmployment = Boolean(row.company) && Boolean(row.position);
-      const userDocs = documentsByUser[row.id] ?? [];
-
-      const findDocByCategory = (category) => userDocs.find((doc) => doc.category === category) ?? null;
-      const idPhotoDoc = findDocByCategory('id_photo');
-      const employmentDoc = findDocByCategory('employment_proof');
-
-      const registrationFormEntry = {
-        key: 'registration_form',
-        label: 'Registration form',
-        filePath: row.addressProof ?? null,
-        source: row.addressProof ? 'registration_forms' : null,
-        verifiedAt: null,
-      };
-
-      const employmentEntry = {
-        key: 'employment_certificate',
-        label: 'Employment certificate',
-        filePath: employmentDoc?.filePath ?? row.employmentProof ?? null,
-        source: employmentDoc ? 'user_documents' : row.employmentProof ? 'registration_forms' : null,
-        verifiedAt: employmentDoc?.verifiedAt ?? null,
-      };
-
-      const idPhotoEntry = {
-        key: 'id_photo',
-        label: 'ID photo',
-        filePath: idPhotoDoc?.filePath ?? row.idDocument ?? null,
-        source: idPhotoDoc ? 'user_documents' : row.idDocument ? 'registration_forms' : null,
-        verifiedAt: idPhotoDoc?.verifiedAt ?? null,
-      };
-
-      const documentFiles = [registrationFormEntry, employmentEntry, idPhotoEntry].map((entry) => ({
-        ...entry,
-        status: entry.filePath
-          ? entry.verifiedAt
-            ? 'Uploaded (verified)'
-            : 'Uploaded (pending verification)'
-          : 'Missing upload',
-      }));
-
-      const documentsComplete = Boolean(employmentEntry.filePath && idPhotoEntry.filePath);
-      const phoneValid = Boolean(row.phone);
-      const emailValid = Boolean(row.email && row.email.includes('@'));
-      const hasUnion = Boolean(row.unionAffiliation);
-      const statusLabel = (() => {
-        switch (row.accountStatus) {
-          case 'under_review':
-            return 'Under Review';
-          case 'email_verified':
-            return 'Email Verified';
-          default:
-            return 'Pending Review';
-        }
-      })();
-
-      const priority = (() => {
-        if (row.accountStatus === 'under_review' || duplicateFlag) return 'High';
-        if (!documentsComplete || !phoneValid) return 'Normal';
-        return 'Normal';
-      })();
-
-      const timeline = [];
-      if (submittedDate) {
-        timeline.push({ time: formatDisplayDate(submittedDate), detail: 'Registration submitted by member' });
-      }
-      if (row.accountStatus === 'email_verified') {
-        timeline.push({ time: formatDisplayDate(row.createdAt), detail: 'Email verification completed' });
-      }
-      if (row.accountStatus === 'under_review') {
-        timeline.push({ time: formatDisplayDate(row.createdAt), detail: 'Queued for manual review' });
-      }
-      if (row.registrationRemarks) {
-        timeline.push({ time: 'Notes', detail: row.registrationRemarks });
-      }
-
-      const riskNotes = [];
-      if (duplicateFlag) {
-        riskNotes.push('Potential duplicate detected based on email');
-      }
-      if (!phoneValid) {
-        riskNotes.push('Phone number missing or invalid');
-      }
-      if (!documentsComplete || !hasEmployment) {
-        riskNotes.push('Employment documentation incomplete');
-      }
-      if (!riskNotes.length) {
-        riskNotes.push('No risk indicators detected by system checks');
-      }
-
-      return {
-        id: `REG-${String(row.id).padStart(6, '0')}`,
-        userId: row.id,
-        fullName: fullName || 'Pending Member',
-        email: row.email,
-        phone: row.phone,
-        company: row.company,
-        department: row.department,
-        position: row.position,
-        unionAffiliation: row.unionAffiliation,
-        address: row.address,
-        yearsEmployed: row.yearsEmployed,
-        membershipType: hasUnion ? 'Regular' : 'Associate',
-        payrollConsent: null,
-        submittedDate,
-        status: statusLabel,
-        priority,
-        duplicateFlag,
-        documents: {
-          registrationForm: registrationFormEntry.filePath ? 'Uploaded' : 'Missing',
-          employmentCertificate: employmentEntry.filePath ? 'Uploaded' : 'Missing',
-          idPhoto: idPhotoEntry.filePath ? 'Uploaded' : 'Pending upload',
-          unionForm: hasUnion ? 'Union affiliation stated' : 'Pending confirmation',
-        },
-        documentFiles,
-        validationChecks: {
-          emailValid,
-          phoneValid,
-          documentsComplete,
-          companyVerified: Boolean(row.company),
-          noDuplicates: !duplicateFlag,
-        },
-        riskNotes,
-        timeline,
-      };
-    });
-
-    const summary = {
-      totalPending: queue.length,
-      highPriority: queue.filter((item) => item.priority === 'High').length,
-      duplicates: queue.filter((item) => item.duplicateFlag).length,
-      docIssues: queue.filter((item) => !item.validationChecks.documentsComplete).length,
-    };
-
-    res.json({ summary, queue });
+    const payload = await loadRegistrationQueue();
+    res.json(payload);
   } catch (error) {
     res.status(500).json({ message: 'Unable to load registration review data', error: error.message });
+  }
+});
+
+router.post('/registrations/:userId/approve', async (req, res) => {
+  const userId = parseRegistrationUserId(req.params.userId);
+  if (!Number.isFinite(userId)) {
+    res.status(400).json({ message: 'Invalid registration identifier' });
+    return;
+  }
+
+  const { actorAdminId, actorName, note } = req.body ?? {};
+  const normalizedAdminId = Number.isFinite(Number(actorAdminId)) ? Number(actorAdminId) : null;
+  const normalizedNote = typeof note === 'string' ? note.trim() : '';
+  const metadata = {
+    actorType: normalizedAdminId ? 'admin' : 'system',
+    actorName: typeof actorName === 'string' && actorName.trim().length ? actorName.trim() : 'Admin Portal',
+    status: 'approved',
+    action: 'approve',
+  };
+  if (normalizedNote) {
+    metadata.note = normalizedNote;
+  }
+
+  try {
+    await withTransaction(async (connection) => {
+      const [userRows] = await connection.query(
+        'SELECT id, status FROM users WHERE id = ? FOR UPDATE;',
+        [userId],
+      );
+
+      if (!userRows.length) {
+        throw buildHttpError(404, 'Registration not found');
+      }
+
+      if (userRows[0].status === 'approved') {
+        throw buildHttpError(409, 'Registration already approved');
+      }
+
+      await connection.query(
+        `UPDATE users SET status = 'approved', updated_at = CURRENT_TIMESTAMP WHERE id = ? LIMIT 1;`,
+        [userId],
+      );
+
+      await connection.query(
+        `INSERT INTO audit_logs (
+           actor_admin_id,
+           actor_user_id,
+           action,
+           entity_type,
+           entity_id,
+           metadata,
+           ip_address
+         ) VALUES (?, ?, ?, ?, ?, CAST(? AS JSON), ?);`,
+        [
+          normalizedAdminId,
+          null,
+          'registration_approved',
+          'registration',
+          userId,
+          JSON.stringify(metadata),
+          req.ip ?? null,
+        ],
+      );
+    });
+
+    const payload = await loadRegistrationQueue();
+    res.json({ message: 'Registration approved successfully', ...payload });
+  } catch (error) {
+    const statusCode = error?.statusCode ?? 500;
+    const response = { message: statusCode === 500 ? 'Unable to approve registration' : error.message };
+    if (statusCode === 500) {
+      response.error = error.message;
+    }
+    res.status(statusCode).json(response);
+  }
+});
+
+router.post('/registrations/:userId/reject', async (req, res) => {
+  const userId = parseRegistrationUserId(req.params.userId);
+  if (!Number.isFinite(userId)) {
+    res.status(400).json({ message: 'Invalid registration identifier' });
+    return;
+  }
+
+  const { reason, category, actorAdminId, actorName } = req.body ?? {};
+  const normalizedReason = typeof reason === 'string' ? reason.trim() : '';
+
+  if (!normalizedReason.length) {
+    res.status(400).json({ message: 'Rejection reason is required' });
+    return;
+  }
+
+  const normalizedAdminId = Number.isFinite(Number(actorAdminId)) ? Number(actorAdminId) : null;
+  const metadata = {
+    actorType: normalizedAdminId ? 'admin' : 'system',
+    actorName: typeof actorName === 'string' && actorName.trim().length ? actorName.trim() : 'Admin Portal',
+    status: 'rejected',
+    reason: normalizedReason,
+    action: 'reject',
+  };
+  if (typeof category === 'string' && category.trim().length) {
+    metadata.category = category.trim();
+  }
+
+  try {
+    await withTransaction(async (connection) => {
+      const [userRows] = await connection.query(
+        'SELECT id, status FROM users WHERE id = ? FOR UPDATE;',
+        [userId],
+      );
+
+      if (!userRows.length) {
+        throw buildHttpError(404, 'Registration not found');
+      }
+
+      const currentStatus = userRows[0].status;
+      if (currentStatus === 'rejected') {
+        throw buildHttpError(409, 'Registration already rejected');
+      }
+      if (currentStatus === 'approved') {
+        throw buildHttpError(409, 'Approved members cannot be rejected');
+      }
+
+      await connection.query(
+        `UPDATE users SET status = 'rejected', updated_at = CURRENT_TIMESTAMP WHERE id = ? LIMIT 1;`,
+        [userId],
+      );
+
+      await connection.query(
+        `UPDATE registration_forms SET remarks = ? WHERE user_id = ? LIMIT 1;`,
+        [normalizedReason, userId],
+      );
+
+      await connection.query(
+        `INSERT INTO audit_logs (
+           actor_admin_id,
+           actor_user_id,
+           action,
+           entity_type,
+           entity_id,
+           metadata,
+           ip_address
+         ) VALUES (?, ?, ?, ?, ?, CAST(? AS JSON), ?);`,
+        [
+          normalizedAdminId,
+          null,
+          'registration_rejected',
+          'registration',
+          userId,
+          JSON.stringify(metadata),
+          req.ip ?? null,
+        ],
+      );
+    });
+
+    const payload = await loadRegistrationQueue();
+    res.json({ message: 'Registration rejected', ...payload });
+  } catch (error) {
+    const statusCode = error?.statusCode ?? 500;
+    const response = { message: statusCode === 500 ? 'Unable to reject registration' : error.message };
+    if (statusCode === 500) {
+      response.error = error.message;
+    }
+    res.status(statusCode).json(response);
   }
 });
 

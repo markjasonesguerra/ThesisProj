@@ -1,11 +1,9 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import {
-  Activity,
   Award,
   BarChart3,
   Building2,
   Calendar,
-  Clock,
   ClipboardList,
   DollarSign,
   Download,
@@ -13,13 +11,12 @@ import {
   LineChart,
   PieChart,
   ShieldCheck,
-  Sparkles,
   Target,
   TrendingUp,
   Users,
 } from "lucide-react";
 import "../styles/admin-base.css";
-import { aiAnalytics } from "../components/ai/mockAiData";
+import api from "../api/admin";
 
 const tabs = [
   { id: "overview", label: "Overview" },
@@ -28,195 +25,210 @@ const tabs = [
   { id: "operations", label: "Operations" },
   { id: "custom", label: "Custom Reports" },
 ];
-
-const reportHistory = [
-  {
-    id: "weekly",
-    title: "Weekly Workforce Update",
-    summary: "Tickets closed, member engagements, escalations by region.",
-    generated: "2025-10-02 08:15",
-    format: "PDF",
-  },
-  {
-    id: "ai",
-    title: "AI Decisioning Insights",
-    summary: "Confidence, overrides, top misclassifications (30 days).",
-    generated: "2025-10-01 18:00",
-    format: "Dashboard",
-  },
-  {
-    id: "benefits",
-    title: "Benefits Assistance Report",
-    summary: "Disbursements, SLA tracking, member satisfaction trends.",
-    generated: "2025-09-30 17:45",
-    format: "Excel",
-  },
-  {
-    id: "finance",
-    title: "Monthly Collections Summary",
-    summary: "Payroll deductions, arrears, variance against targets.",
-    generated: "2025-09-29 09:30",
-    format: "CSV",
-  },
-];
-
-const exportHistory = [
-  { id: "exp-1047", name: "Membership Growth Report", date: "2025-09-30", size: "2.3 MB", status: "Completed" },
-  { id: "exp-1046", name: "Financial Summary Q3", date: "2025-09-28", size: "1.8 MB", status: "Completed" },
-  { id: "exp-1045", name: "AI Override Audit", date: "2025-09-27", size: "1.2 MB", status: "Completed" },
-  { id: "exp-1044", name: "Benefits Utilization", date: "2025-09-25", size: "3.1 MB", status: "Completed" },
-];
-
-const scheduledReports = [
-  { id: "sched-01", name: "Monthly Membership Summary", cadence: "Monthly", nextRun: "2025-11-01" },
-  { id: "sched-02", name: "Weekly Collection Report", cadence: "Weekly", nextRun: "2025-10-07" },
-  { id: "sched-03", name: "Quarterly Analytics", cadence: "Quarterly", nextRun: "2025-12-31" },
-  { id: "sched-04", name: "Benefits & Assistance Digest", cadence: "Bi-weekly", nextRun: "2025-10-14" },
-];
+const exportHistory = [];
+const scheduledReports = [];
 
 export default function ReportsAnalytics() {
   const [activeTab, setActiveTab] = useState("overview");
-  const [timeRange, setTimeRange] = useState("30d");
-  const [comparisonRange, setComparisonRange] = useState("previous-period");
-  const [segmentFilter, setSegmentFilter] = useState("all");
+  const timeRange = "30d";
 
-  const rangeLabels = {
-    "7d": "the last 7 days",
-    "30d": "the last 30 days",
-    "90d": "the last 90 days",
-    "12m": "the last 12 months",
+  const rangeShortLabels = {
+    "7d": "Last 7 days",
+    "30d": "Last 30 days",
+    "90d": "Last 90 days",
+    "12m": "Last 12 months",
   };
 
-  const comparisonLabels = {
-    "previous-period": "versus the previous period",
-    "previous-year": "versus the same period last year",
-    baseline: "versus the quarterly baseline",
+  const rangeDurationLabels = {
+    "7d": "7 days",
+    "30d": "30 days",
+    "90d": "90 days",
+    "12m": "12 months",
   };
 
-  const segmentLabels = {
-    all: "all employers",
-    top: "the top 25 employers",
-    transport: "transport & logistics",
-    retail: "retail & services",
+  const newJoinerFieldByRange = {
+    "7d": "newJoiners7d",
+    "30d": "newJoiners30d",
+    "90d": "newJoiners90d",
+    "12m": "newJoiners12m",
   };
 
-  const contextDescription = [
-    rangeLabels[timeRange] ? `Showing ${rangeLabels[timeRange]}` : "Showing the selected range",
-    comparisonLabels[comparisonRange] ?? "",
-    segmentLabels[segmentFilter] ? `for ${segmentLabels[segmentFilter]}` : "for all data",
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .concat(".");
+  const [summary, setSummary] = useState(null);
 
-  const overviewMetrics = useMemo(
-    () => [
-      {
-        id: "members",
-        label: "Total members",
-        value: "18,240",
-        delta: "+3.2% vs last month",
-        icon: Users,
-        tone: "is-blue",
-      },
-      {
-        id: "unions",
-        label: "Active locals",
-        value: "128",
-        delta: "+4 new charters",
-        icon: ShieldCheck,
-        tone: "is-purple",
-      },
-      {
-        id: "auto-assign",
-        label: "AI auto-assign rate",
-        value: `${aiAnalytics.autoAssignRate}%`,
-        delta: "+12% vs last month",
-        icon: TrendingUp,
-        tone: "is-green",
-      },
-      {
-        id: "resolution",
-        label: "Avg resolution time",
-        value: "2.4 days",
-        delta: "Goal: under 3 days",
-        icon: Clock,
-        tone: "is-amber",
-      },
-    ],
-    [],
-  );
+  const selectedRangeShort = rangeShortLabels[timeRange] ?? "Selected range";
+  const selectedRangeDuration = rangeDurationLabels[timeRange] ?? "selected range";
 
-  const insightCards = useMemo(
-    () => [
-      {
-        id: "growth",
-        title: "Growth outpacing target",
-        summary: "+326 members ahead of quarterly plan",
-        detail: "AI-assisted outreach improved conversion in retail locals.",
-        tone: "is-indigo",
-        icon: Sparkles,
-      },
-      {
-        id: "assistance",
-        title: "Benefits disbursement surge",
-        summary: "₱540K released in the last 7 days",
-        detail: "Emergency aid requests were resolved 22% faster than SLA.",
-        tone: "is-teal",
-        icon: Activity,
-      },
-      {
-        id: "collections",
-        title: "Collections stability",
-        summary: "Target attainment holding at 108%",
-        detail: "Transport companies are driving a +9% uplift in payroll deductions.",
-        tone: "is-amber",
-        icon: DollarSign,
-      },
-    ],
-    [],
-  );
+  const newJoinersValue = useMemo(() => {
+    const members = summary?.members;
+    if (!members) return null;
 
-  const membershipSegments = useMemo(
-    () => [
-      { label: "Retail & services", value: 6210, percentage: 34 },
-      { label: "Manufacturing", value: 5480, percentage: 30 },
-      { label: "Transport & logistics", value: 3120, percentage: 17 },
-      { label: "Healthcare", value: 2044, percentage: 11 },
-      { label: "Other sectors", value: 1386, percentage: 8 },
-    ],
-    [],
-  );
+    if (members.newJoinersByRange && members.newJoinersByRange[timeRange] != null) {
+      return members.newJoinersByRange[timeRange];
+    }
+    if (members.newRegistrationsByRange && members.newRegistrationsByRange[timeRange] != null) {
+      return members.newRegistrationsByRange[timeRange];
+    }
 
-  const membershipHighlights = useMemo(
-    () => [
-      { label: "Active members", value: "18,203", meta: "94.6% of total" },
-      { label: "New registrations (30d)", value: "47", meta: "+8 vs prior period" },
-      { label: "Retention rate", value: "97.8%", meta: "Stable" },
-      { label: "Duplicate detections", value: "3", meta: "6.4% flagged" },
-    ],
-    [],
-  );
+    if (members.newJoiners && typeof members.newJoiners === "object" && members.newJoiners[timeRange] != null) {
+      return members.newJoiners[timeRange];
+    }
+    if (members.newRegistrations && typeof members.newRegistrations === "object" && members.newRegistrations[timeRange] != null) {
+      return members.newRegistrations[timeRange];
+    }
 
-  const financialHighlights = useMemo(
-    () => [
-      { label: "This month", value: "₱1.02M", meta: "+8% vs target", tone: "is-green" },
-      { label: "Year-to-date", value: "₱7.3M", meta: "+12% YoY", tone: "is-blue" },
-      { label: "Outstanding dues", value: "₱482K", meta: "9.5% of total", tone: "is-red" },
-      { label: "Disbursements", value: "₱2.57M", meta: "Benefits assistance", tone: "is-purple" },
-    ],
-    [],
-  );
+    const field = newJoinerFieldByRange[timeRange];
+    if (field && members[field] != null) {
+      return members[field];
+    }
+    const registrationField = field ? field.replace("newJoiners", "newRegistrations") : null;
+    if (registrationField && members[registrationField] != null) {
+      return members[registrationField];
+    }
 
-  const operationsHighlights = useMemo(
-    () => [
-      { label: "Physical cards", value: "1,247", meta: "6.5% of members", tone: "is-purple" },
-      { label: "Digital IDs", value: "17,421", meta: "92% adoption", tone: "is-blue" },
-      { label: "Assistance beneficiaries", value: "323", meta: "₱2.57M disbursed", tone: "is-green" },
-      { label: "Events this year", value: "12", meta: "87% avg attendance", tone: "is-amber" },
-    ],
-    [],
-  );
+    if (members.newJoiners30d != null) {
+      return members.newJoiners30d;
+    }
+    if (members.newRegistrations30d != null) {
+      return members.newRegistrations30d;
+    }
+
+    return null;
+  }, [summary, timeRange]);
+
+  // helpers available to all hooks in this component
+  const formatCount = (v) => (v === null || v === undefined ? '—' : Number(v).toLocaleString());
+  const formatCurrency = (v) => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(Number(v ?? 0));
+  const formatPercent = (v, digits = 1) => {
+    if (v === null || v === undefined || Number.isNaN(Number(v))) {
+      return '—';
+    }
+    const numeric = Number(v);
+    const sign = numeric >= 0 ? '' : '-';
+    return `${sign}${Math.abs(numeric).toFixed(digits)}%`;
+  };
+
+  const formatStatValue = (value, formatType = 'count') => {
+    if (value === null || value === undefined || Number.isNaN(Number(value))) {
+      return '—';
+    }
+    switch (formatType) {
+      case 'currency':
+        return formatCurrency(value);
+      case 'percent':
+        return `${Number(value).toFixed(1)}%`;
+      default:
+        return formatCount(value);
+    }
+  };
+
+  const growthTrend = summary?.members?.growthTrend ?? [];
+
+  const growthChartData = useMemo(() => {
+    if (!growthTrend.length) {
+      return null;
+    }
+
+    const totals = growthTrend.map((point) => Number(point.totalMembers ?? 0));
+    const newMembersSeries = growthTrend.map((point) => Number(point.newMembers ?? point.registrations ?? 0));
+    const maxValue = Math.max(1, ...totals, ...newMembersSeries);
+    const xDenominator = Math.max(growthTrend.length - 1, 1);
+
+    const toPoints = (series) => series
+      .map((value, index) => {
+        const x = (index / xDenominator) * 100;
+        const y = 100 - ((value / maxValue) * 100);
+        return `${x},${y}`;
+      })
+      .join(' ');
+
+    const gridSteps = 4;
+    const gridLines = Array.from({ length: gridSteps + 1 }, (_value, idx) => (idx / gridSteps) * 100);
+
+    return {
+      labels: growthTrend.map((point) => point.label ?? point.month),
+      maxValue,
+      totals,
+      newMembers: newMembersSeries,
+      totalsPoints: toPoints(totals),
+      newMembersPoints: toPoints(newMembersSeries),
+      gridLines,
+    };
+  }, [growthTrend]);
+
+  const memberDistribution = useMemo(() => {
+    const entries = summary?.members?.distribution ?? [];
+    if (!entries.length) {
+      return { segments: [], pieStyle: null, total: 0 };
+    }
+    const palette = ['#2563eb', '#ef4444', '#22c55e', '#f97316', '#8b5cf6', '#6b7280', '#14b8a6', '#facc15'];
+    const total = entries.reduce((acc, item) => acc + Number(item.count ?? 0), 0);
+    if (!total) {
+      return { segments: [], pieStyle: null, total: 0 };
+    }
+
+    let cumulativePercent = 0;
+    const segments = entries.map((item, index) => {
+      const value = Number(item.count ?? 0);
+      const percent = (value / total) * 100;
+      const startPercent = cumulativePercent;
+      cumulativePercent += percent;
+      return {
+        company: item.company,
+        value,
+        percent,
+        color: palette[index % palette.length],
+        startDeg: (startPercent / 100) * 360,
+        endDeg: (cumulativePercent / 100) * 360,
+      };
+    });
+
+    const pieStyle = {
+      background: `conic-gradient(${segments
+        .map((segment) => `${segment.color} ${segment.startDeg}deg ${segment.endDeg}deg`)
+        .join(', ')})`,
+    };
+
+    return { segments, pieStyle, total };
+  }, [summary]);
+
+  const performanceHighlights = useMemo(() => {
+    const toHighlights = (items) => (items ?? []).map((item) => ({
+      label: item.label,
+      value: item.value,
+      format: item.format ?? 'count',
+      meta: item.meta ?? null,
+    }));
+
+    return {
+      membership: toHighlights(summary?.performance?.membership),
+      financial: toHighlights(summary?.performance?.financial),
+      operations: toHighlights(summary?.performance?.operations),
+    };
+  }, [summary]);
+
+  useEffect(() => {
+    let mounted = true;
+    const load = async () => {
+      try {
+        const res = await api.getReportsSummary();
+        if (!mounted) return;
+        setSummary(res.data);
+      } catch (err) {
+        console.error('Unable to load reports summary', err);
+      }
+    };
+    load();
+    return () => { mounted = false; };
+  }, []);
+
+  function currencyFormat(amount) {
+    return new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(amount);
+  }
+
+  // membership & finance highlights are data-driven where possible; default to empty/placeholder
+  const membershipHighlights = performanceHighlights.membership;
+  const financialHighlights = performanceHighlights.financial;
+  const operationsHighlights = performanceHighlights.operations;
 
   const registrationKPIs = [
     { label: "Avg processing time", value: "2.3 days" },
@@ -225,138 +237,202 @@ export default function ReportsAnalytics() {
     { label: "Duplicate detections", value: "3 (6.4%)" },
   ];
 
+  const topKpis = useMemo(() => {
+    const membersTotal = summary?.members?.total;
+    const newJoiners30d = summary?.members?.newJoiners30d;
+    const membersGrowthPercent = summary?.members?.growthPercent;
+
+    const revenueYtd = summary?.financial?.revenueYtd;
+    const revenuePrevYear = summary?.financial?.revenuePrevYear;
+    const revenueYoYPercent = summary?.financial?.revenueYoYPercent ?? (
+      revenuePrevYear > 0 && revenueYtd != null
+        ? ((revenueYtd - revenuePrevYear) / revenuePrevYear) * 100
+        : null
+    );
+
+    const collectionRate = summary?.financial?.collectionRate;
+    const collectionNote = summary?.financial?.collectionNote;
+
+    const activeCompanies = summary?.members?.activeEmployers;
+    const payingEmployers = summary?.members?.payingEmployers;
+
+    const normalizeCurrency = (value) => {
+      const numeric = Number(value);
+      return Number.isFinite(numeric) ? currencyFormat(numeric) : '—';
+    };
+
+    const normalizePercent = (value, fallback = '—') => {
+      const numeric = Number(value);
+      if (!Number.isFinite(numeric)) {
+        return fallback;
+      }
+      const rounded = numeric.toFixed(1);
+      const sign = numeric > 0 ? '+' : '';
+      return `${sign}${rounded}%`;
+    };
+
+    const membersDelta = (() => {
+      if (Number.isFinite(membersGrowthPercent)) {
+        return `${membersGrowthPercent >= 0 ? '+' : ''}${membersGrowthPercent.toFixed(1)}% vs prior 30d`;
+      }
+      if (Number.isFinite(newJoiners30d)) {
+        return `+${formatCount(newJoiners30d)} in last 30 days`;
+      }
+      return '—';
+    })();
+
+    const revenueDelta = normalizePercent(revenueYoYPercent, revenuePrevYear ? '0% vs last year' : '—')
+      .replace('NaN', '—');
+
+    const collectionDelta = (() => {
+      if (collectionNote) {
+        return collectionNote;
+      }
+      if (Number.isFinite(collectionRate)) {
+        return collectionRate >= 95 ? 'Above target' : collectionRate >= 85 ? 'On track' : 'Needs attention';
+      }
+      return '—';
+    })();
+
+    const companiesDelta = (() => {
+      if (Number.isFinite(payingEmployers) && payingEmployers > 0) {
+        return `${formatCount(payingEmployers)} remitting this year`;
+      }
+      if (Number.isFinite(activeCompanies) && activeCompanies > 0) {
+        return 'Distinct employers represented';
+      }
+      return '—';
+    })();
+
+    return [
+      {
+        id: 'members',
+        label: 'Total Members',
+        value: formatCount(membersTotal),
+        delta: membersDelta,
+        tone: 'positive',
+      },
+      {
+        id: 'revenue',
+        label: 'Revenue (YTD)',
+        value: normalizeCurrency(revenueYtd),
+        delta: revenueDelta,
+        tone: 'positive',
+      },
+      {
+        id: 'collection',
+        label: 'Collection Rate',
+        value: normalizePercent(collectionRate, '—').replace('NaN', '—'),
+        delta: collectionDelta,
+        tone: Number.isFinite(collectionRate) && collectionRate >= 90 ? 'positive' : 'neutral',
+      },
+      {
+        id: 'companies',
+        label: 'Active Companies',
+        value: formatCount(activeCompanies),
+        delta: companiesDelta,
+        tone: 'neutral',
+      },
+    ];
+  }, [summary]);
+
   return (
-    <div className="admin-page admin-stack-xl">
-      <header className="admin-row admin-align-start">
-        <div>
+    <div className="admin-page admin-stack-xl reports-page">
+      <section className="reports-header">
+        <div className="reports-header__text">
           <h1>Reports & Analytics</h1>
-          <p className="admin-muted">
-            Comprehensive insights across membership, finances, and operations with AI-assisted guidance.
-          </p>
+          <p className="admin-muted">Comprehensive insights and reporting for ALUzon operations.</p>
         </div>
-        <div className="admin-actions">
+        <div className="reports-header__actions">
           <button type="button" className="admin-button">
-            <Calendar size={16} /> Schedule report
+            <Calendar size={16} /> Schedule Report
           </button>
           <button type="button" className="admin-button">
-            <Filter size={16} /> Custom filter
+            <Filter size={16} /> Custom Filter
           </button>
           <button type="button" className="admin-button is-primary">
-            <Download size={16} /> Export all
+            <Download size={16} /> Export All
           </button>
         </div>
-      </header>
-
-      <section className="admin-filter-bar">
-        <div className="admin-filter-bar__group">
-          <span className="admin-chip is-blue">AI summary refreshed 2m ago</span>
-          <span className="admin-chip--ghost">{contextDescription}</span>
-        </div>
-        <div className="admin-filter-bar__filters">
-          <label className="admin-select">
-            <span>Time range</span>
-            <select value={timeRange} onChange={(event) => setTimeRange(event.target.value)}>
-              <option value="7d">Last 7 days</option>
-              <option value="30d">Last 30 days</option>
-              <option value="90d">Last 90 days</option>
-              <option value="12m">Last 12 months</option>
-            </select>
-          </label>
-          <label className="admin-select">
-            <span>Compare to</span>
-            <select value={comparisonRange} onChange={(event) => setComparisonRange(event.target.value)}>
-              <option value="previous-period">Previous period</option>
-              <option value="previous-year">Same period last year</option>
-              <option value="baseline">Quarterly baseline</option>
-            </select>
-          </label>
-          <label className="admin-select">
-            <span>Segment</span>
-            <select value={segmentFilter} onChange={(event) => setSegmentFilter(event.target.value)}>
-              <option value="all">All employers</option>
-              <option value="top">Top 25 employers</option>
-              <option value="transport">Transport & logistics</option>
-              <option value="retail">Retail & services</option>
-            </select>
-          </label>
-        </div>
       </section>
 
-      <section className="admin-card-grid cols-4">
-        {overviewMetrics.map((metric) => {
-          const Icon = metric.icon;
-          return (
-            <article key={metric.id} className={`admin-metric-card ${metric.tone}`}>
-              <span className="admin-metric-card__icon">
-                <Icon size={18} />
-              </span>
-              <div className="admin-metric-card__content">
-                <span className="admin-metric-card__label">{metric.label}</span>
-                <strong className="admin-metric-card__value">{metric.value}</strong>
-                <span className="admin-metric-card__delta">{metric.delta}</span>
-              </div>
-            </article>
-          );
-        })}
-      </section>
-
-      <section className="admin-insight-grid">
-        {insightCards.map((card) => {
-          const Icon = card.icon;
-          return (
-            <article key={card.id} className={`admin-insight-card ${card.tone}`}>
-              <span className="admin-insight-card__icon">
-                <Icon size={18} />
-              </span>
-              <div className="admin-insight-card__content">
-                <strong>{card.title}</strong>
-                <span>{card.summary}</span>
-                <p>{card.detail}</p>
-              </div>
-            </article>
-          );
-        })}
-      </section>
-
-      <div className="admin-tabs">
-        <div className="admin-tabs__list">
-          {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              className={`admin-tabs__trigger ${activeTab === tab.id ? "is-active" : ""}`}
-              onClick={() => setActiveTab(tab.id)}
-            >
-              {tab.label}
-            </button>
-          ))}
+      {summary?.meta?.isSample ? (
+        <div className="admin-alert admin-alert--info">
+          Displaying sample analytics until live data is available.
         </div>
+      ) : null}
 
-        <div className="admin-tabs__content">
-          {activeTab === "overview" ? (
+      <div className="reports-tab-strip">
+        {tabs.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            className={`reports-tab ${activeTab === tab.id ? "is-active" : ""}`}
+            onClick={() => setActiveTab(tab.id)}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="reports-tab-content">
+        {activeTab === "overview" ? (
             <>
+              <section className="reports-kpi-grid">
+                {topKpis.map((kpi) => (
+                  <article key={kpi.id} className="reports-kpi-card">
+                    <span className="reports-kpi-card__label">{kpi.label}</span>
+                    <strong className="reports-kpi-card__value">{kpi.value}</strong>
+                    <span className={`reports-kpi-card__delta ${kpi.tone === 'positive' ? 'is-positive' : ''}`}>
+                      {kpi.delta}
+                    </span>
+                  </article>
+                ))}
+              </section>
+
               <div className="admin-grid-two">
                 <article className="admin-card admin-stack-md">
                   <header className="admin-card__heading">
                     <LineChart size={18} />
                     <div>
                       <h2>Membership growth</h2>
-                      <p className="admin-muted">Member count and new joiners for the past 8 months.</p>
+                      <p className="admin-muted">Member count and new joiners for the past {selectedRangeDuration}.</p>
                     </div>
                   </header>
-                  <div className="admin-chart-placeholder">
-                    <div className="admin-chart-placeholder__content">
-                      <span>Line chart placeholder – plug in analytics library</span>
-                      <div className="admin-chart-legend">
-                        <span className="is-primary">Members</span>
-                        <span className="is-muted">New joiners</span>
+                  {growthChartData ? (
+                    <div className="reports-line-chart">
+                      <svg viewBox="0 0 100 100" preserveAspectRatio="none">
+                        {growthChartData.gridLines.map((y, index) => (
+                          <line key={`grid-${y}-${index}`} x1="0" x2="100" y1={y} y2={y} className="reports-line-chart__grid" />
+                        ))}
+                        <polyline points={growthChartData.totalsPoints} className="reports-line-chart__series is-total" />
+                        <polyline points={growthChartData.newMembersPoints} className="reports-line-chart__series is-new" />
+                      </svg>
+                      <div className="reports-line-chart__legend">
+                        <span><span className="reports-line-chart__dot is-total" /> Members</span>
+                        <span><span className="reports-line-chart__dot is-new" /> New joiners</span>
+                      </div>
+                      <div className="reports-line-chart__labels">
+                        {growthTrend.map((point) => (
+                          <span key={point.month}>{point.label ?? point.month}</span>
+                        ))}
                       </div>
                     </div>
-                  </div>
+                  ) : (
+                    <div className="admin-empty-state is-minimal">No member growth data yet.</div>
+                  )}
                   <div className="admin-inline-list">
-                    <span>Total members: 18,240</span>
-                    <span>New joiners (30d): 47</span>
-                    <span>Churn: 1.8%</span>
+                    <span>
+                      Total members: {formatCount(summary?.members?.total)}
+                      {summary?.members?.retentionRate != null ? ` (${formatPercent(summary.members.retentionRate)})` : ''}
+                    </span>
+                    <span>
+                      New joiners ({selectedRangeShort}): {newJoinersValue != null ? formatCount(newJoinersValue) : '—'}
+                      {summary?.members?.newJoinersChange != null ? ` (${summary.members.newJoinersChange >= 0 ? '+' : ''}${Math.abs(Number(summary.members.newJoinersChange)).toFixed(1)}% vs prior)` : ''}
+                    </span>
+                    <span>
+                      Growth vs prior 30d: {summary?.members?.growthPercent != null ? `${summary.members.growthPercent >= 0 ? '+' : ''}${Math.abs(Number(summary.members.growthPercent)).toFixed(1)}%` : '—'}
+                    </span>
                   </div>
                 </article>
 
@@ -368,19 +444,28 @@ export default function ReportsAnalytics() {
                       <p className="admin-muted">Breakdown by employer segments.</p>
                     </div>
                   </header>
-                  <div className="admin-stack-sm">
-                    {membershipSegments.map((segment) => (
-                      <div key={segment.label} className="admin-progress-row">
-                        <div className="admin-progress-row__label">
-                          <span>{segment.label}</span>
-                          <strong>{segment.value.toLocaleString()}</strong>
-                        </div>
-                        <div className="admin-progress">
-                          <span style={{ width: `${segment.percentage}%` }} />
+                  {memberDistribution.segments.length ? (
+                    <div className="reports-pie-card">
+                      <div className="reports-pie-card__chart" style={memberDistribution.pieStyle}>
+                        <div className="reports-pie-card__chart-overlay">
+                          <strong>{formatCount(memberDistribution.total)}</strong>
+                          <span>Total</span>
                         </div>
                       </div>
-                    ))}
-                  </div>
+                      <ul className="reports-pie-card__legend">
+                        {memberDistribution.segments.map((segment) => (
+                          <li key={segment.company}>
+                            <span className="reports-pie-card__swatch" style={{ backgroundColor: segment.color }} />
+                            <span className="reports-pie-card__label">{segment.company}</span>
+                            <strong>{formatCount(segment.value)}</strong>
+                            <span className="reports-pie-card__percent">{segment.percent.toFixed(1)}%</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : (
+                    <div className="admin-empty-state is-minimal">No employer distribution data yet.</div>
+                  )}
                 </article>
               </div>
 
@@ -392,92 +477,83 @@ export default function ReportsAnalytics() {
                     <p className="admin-muted">Cross-functional KPIs monitored in the latest reporting cycle.</p>
                   </div>
                 </header>
-                <div className="admin-summary-grid">
+                <div className="admin-summary-columns">
                   <div className="admin-summary-column">
-                    <h3>Membership metrics</h3>
-                    <ul className="admin-stat-list">
-                      {membershipHighlights.map((item) => (
-                        <li key={item.label}>
-                          <span>{item.label}</span>
-                          <span>{item.value}</span>
-                          <small>{item.meta}</small>
-                        </li>
-                      ))}
-                    </ul>
+                    <h3>Membership health</h3>
+                    {membershipHighlights.length ? (
+                      <ul className="admin-stat-list">
+                        {membershipHighlights.map((item) => (
+                          <li key={item.label}>
+                            <span>{item.label}</span>
+                            <span>{formatStatValue(item.value, item.format)}</span>
+                            <small>{item.meta ?? '—'}</small>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <div className="admin-empty-state is-minimal">No membership KPIs yet.</div>
+                    )}
                   </div>
                   <div className="admin-summary-column">
                     <h3>Financial performance</h3>
-                    <ul className="admin-stat-list">
-                      {financialHighlights.map((item) => (
-                        <li key={item.label}>
-                          <span>{item.label}</span>
-                          <span>{item.value}</span>
-                          <small>{item.meta}</small>
-                        </li>
-                      ))}
-                    </ul>
+                    {financialHighlights.length ? (
+                      <ul className="admin-stat-list">
+                        {financialHighlights.map((item) => (
+                          <li key={item.label}>
+                            <span>{item.label}</span>
+                            <span>{formatStatValue(item.value, item.format)}</span>
+                            <small>{item.meta ?? '—'}</small>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <div className="admin-empty-state is-minimal">No financial KPIs yet.</div>
+                    )}
                   </div>
                   <div className="admin-summary-column">
                     <h3>Operational health</h3>
-                    <ul className="admin-stat-list">
-                      {operationsHighlights.map((item) => (
-                        <li key={item.label}>
-                          <span>{item.label}</span>
-                          <span>{item.value}</span>
-                          <small>{item.meta}</small>
-                        </li>
-                      ))}
-                    </ul>
+                    {operationsHighlights.length ? (
+                      <ul className="admin-stat-list">
+                        {operationsHighlights.map((item) => (
+                          <li key={item.label}>
+                            <span>{item.label}</span>
+                            <span>{formatStatValue(item.value, item.format)}</span>
+                            <small>{item.meta ?? '—'}</small>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <div className="admin-empty-state is-minimal">No operations KPIs yet.</div>
+                    )}
                   </div>
                 </div>
               </article>
 
-              <article className="admin-card admin-stack-md">
-                <header className="admin-card__heading">
-                  <ClipboardList size={18} />
-                  <div>
-                    <h2>Latest reports</h2>
-                    <p className="admin-muted">Quick access to the most recent exports and dashboards.</p>
-                  </div>
-                </header>
-                <div className="admin-report-grid">
-                  {reportHistory.map((report) => (
-                    <div key={report.id} className="admin-report-tile">
-                      <div className="admin-report-tile__body">
-                        <strong>{report.title}</strong>
-                        <p>{report.summary}</p>
-                      </div>
-                      <div className="admin-report-tile__meta">
-                        <span><Clock size={14} /> {report.generated}</span>
-                        <span className="admin-chip is-blue">{report.format}</span>
-                      </div>
-                      <button type="button" className="admin-button admin-button--ghost">
-                        <Download size={14} /> Download
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </article>
             </>
-          ) : null}
+            ) : null}
 
-          {activeTab === "membership" ? (
+        {activeTab === "membership" ? (
             <>
               <section className="admin-card-grid cols-3">
-                {["18,203", "47", "97.8%"].map((value, index) => {
+                {(() => {
                   const labels = [
                     { title: "Active members", meta: "Across 128 locals" },
-                    { title: "New registrations", meta: "Past 30 days" },
+                    { title: "New joiners", meta: `Past ${selectedRangeDuration}` },
                     { title: "Retention", meta: "Trailing 12 months" },
                   ];
-                  return (
-                    <article key={labels[index].title} className="admin-card admin-stack-sm">
-                      <span className="admin-card__label">{labels[index].title}</span>
-                      <span className="admin-highlight-value">{value}</span>
-                      <span className="admin-muted">{labels[index].meta}</span>
+                  const values = [
+                    summary?.members?.total != null ? formatCount(summary.members.total) : '—',
+                    newJoinersValue != null ? formatCount(newJoinersValue) : '—',
+                    summary?.members?.retentionRate != null ? `${Number(summary.members.retentionRate).toFixed(1)}%` : '—',
+                  ];
+                  return labels.map((lab, index) => (
+                    <article key={lab.title} className="admin-card admin-stack-sm">
+                      <span className="admin-card__label">{lab.title}</span>
+                      <span className="admin-highlight-value">{values[index]}</span>
+                      <span className="admin-muted">{lab.meta}</span>
                     </article>
-                  );
-                })}
+                  ));
+                })()}
               </section>
 
               <div className="admin-grid-two">
@@ -539,41 +615,17 @@ export default function ReportsAnalytics() {
                   </div>
                 </article>
               </div>
-
-              <article className="admin-card admin-stack-md">
-                <header className="admin-card__heading">
-                  <ClipboardList size={18} />
-                  <div>
-                    <h2>Member journey touchpoints</h2>
-                    <p className="admin-muted">Monitor onboarding throughput and conversion.</p>
-                  </div>
-                </header>
-                <div className="admin-timeline">
-                  {[
-                    { time: "Step 1", detail: "Registration submitted (94% completion rate)" },
-                    { time: "Step 2", detail: "Payroll consent collected (88% on first contact)" },
-                    { time: "Step 3", detail: "AI validation (67% fast-track approvals)" },
-                    { time: "Step 4", detail: "Orientation attendance (72% confirmed)" },
-                    { time: "Step 5", detail: "ID issuance (2.3 days average)" },
-                  ].map((item) => (
-                    <div key={item.detail} className="admin-timeline__item">
-                      <span>{item.time}</span>
-                      <p>{item.detail}</p>
-                    </div>
-                  ))}
-                </div>
-              </article>
             </>
-          ) : null}
+            ) : null}
 
-          {activeTab === "financial" ? (
+        {activeTab === "financial" ? (
             <>
               <section className="admin-card-grid cols-4">
                 {financialHighlights.map((item) => (
-                  <article key={item.label} className={`admin-card admin-stack-sm admin-card--center ${item.tone}`}>
-                    <span className="admin-card__value">{item.value}</span>
+                  <article key={item.label} className="admin-card admin-stack-sm admin-card--center">
+                    <span className="admin-card__value">{formatStatValue(item.value, item.format)}</span>
                     <span className="admin-muted">{item.label}</span>
-                    <span className="admin-card__meta">{item.meta}</span>
+                    <span className="admin-card__meta">{item.meta ?? '—'}</span>
                   </article>
                 ))}
               </section>
@@ -660,16 +712,16 @@ export default function ReportsAnalytics() {
                 </article>
               </div>
             </>
-          ) : null}
+            ) : null}
 
-          {activeTab === "operations" ? (
+        {activeTab === "operations" ? (
             <>
               <section className="admin-card-grid cols-4">
                 {operationsHighlights.map((item) => (
-                  <article key={item.label} className={`admin-card admin-stack-sm admin-card--center ${item.tone}`}>
-                    <span className="admin-card__value">{item.value}</span>
+                  <article key={item.label} className="admin-card admin-stack-sm admin-card--center">
+                    <span className="admin-card__value">{formatStatValue(item.value, item.format)}</span>
                     <span className="admin-muted">{item.label}</span>
-                    <span className="admin-card__meta">{item.meta}</span>
+                    <span className="admin-card__meta">{item.meta ?? '—'}</span>
                   </article>
                 ))}
               </section>
@@ -759,9 +811,9 @@ export default function ReportsAnalytics() {
                 </div>
               </article>
             </>
-          ) : null}
+            ) : null}
 
-          {activeTab === "custom" ? (
+        {activeTab === "custom" ? (
             <>
               <div className="admin-grid-two">
                 <article className="admin-card admin-stack-md">
@@ -881,8 +933,7 @@ export default function ReportsAnalytics() {
                 </div>
               </article>
             </>
-          ) : null}
-        </div>
+            ) : null}
       </div>
     </div>
   );
