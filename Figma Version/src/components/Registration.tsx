@@ -69,8 +69,18 @@ export function Registration({ onRegister, onNavigate, isCompletingProfile = fal
   const prevStep = () => setCurrentStep(prev => Math.max(prev - 1, 1));
 
   const handleSubmit = () => {
+    // Construct full address string for backward compatibility
+    const fullAddress = [
+      formData.addressLine1,
+      formData.addressLine2,
+      formData.city,
+      formData.province,
+      formData.postalCode
+    ].filter(Boolean).join(', ');
+
     const completeData = {
       ...formData,
+      address: fullAddress,
       profilePicture: profileImage || undefined,
     };
     onRegister(completeData);
@@ -90,14 +100,25 @@ export function Registration({ onRegister, onNavigate, isCompletingProfile = fal
     'Other'
   ];
 
-  const unionPositions = [
-    'President',
-    'Vice President', 
-    'Secretary',
-    'Treasurer',
-    'Auditor',
-    'Board Member',
-    'Member'
+  const religions = [
+    'Roman Catholic',
+    'Islam',
+    'Iglesia ni Cristo',
+    'Philippine Independent Church (Aglipayan)',
+    'Seventh-day Adventist',
+    'Bible Baptist Church',
+    'United Church of Christ in the Philippines',
+    'Jehovah\'s Witnesses',
+    'Church of Christ',
+    'Other'
+  ];
+
+  const unionAffiliations = [
+    'BDO Employees Association',
+    'Metrobank Employees Union',
+    'BPI Employees Union',
+    'PNB Employees Union',
+    'Other'
   ];
 
   const renderStep = () => {
@@ -165,12 +186,44 @@ export function Registration({ onRegister, onNavigate, isCompletingProfile = fal
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Complete Address *
               </label>
-              <Textarea
-                value={formData.address || ''}
-                onChange={(e) => handleInputChange('address', e.target.value)}
-                placeholder="House/Unit No., Street, Barangay, City, Province"
-                required
-              />
+              <div className="space-y-3">
+                <Input
+                  type="text"
+                  placeholder="House No., Street Name, Building"
+                  value={formData.addressLine1 || ''}
+                  onChange={(e) => handleInputChange('addressLine1', e.target.value)}
+                  required
+                />
+                <Input
+                  type="text"
+                  placeholder="Barangay, Subdivision (Optional)"
+                  value={formData.addressLine2 || ''}
+                  onChange={(e) => handleInputChange('addressLine2', e.target.value)}
+                />
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <Input
+                    type="text"
+                    placeholder="City/Municipality"
+                    value={formData.city || ''}
+                    onChange={(e) => handleInputChange('city', e.target.value)}
+                    required
+                  />
+                  <Input
+                    type="text"
+                    placeholder="Province"
+                    value={formData.province || ''}
+                    onChange={(e) => handleInputChange('province', e.target.value)}
+                    required
+                  />
+                  <Input
+                    type="text"
+                    placeholder="Postal Code"
+                    value={formData.postalCode || ''}
+                    onChange={(e) => handleInputChange('postalCode', e.target.value)}
+                    required
+                  />
+                </div>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -225,12 +278,18 @@ export function Registration({ onRegister, onNavigate, isCompletingProfile = fal
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Religion
                 </label>
-                <Input
-                  type="text"
-                  value={formData.religion || ''}
-                  onChange={(e) => handleInputChange('religion', e.target.value)}
-                  placeholder="e.g., Catholic, Protestant, etc."
-                />
+                <Select onValueChange={(value) => handleInputChange('religion', value)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select religion" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {religions.map((religion) => (
+                      <SelectItem key={religion} value={religion}>
+                        {religion}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
 
@@ -344,12 +403,18 @@ export function Registration({ onRegister, onNavigate, isCompletingProfile = fal
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Union Affiliation
               </label>
-              <Input
-                type="text"
-                value={formData.unionAffiliation || ''}
-                onChange={(e) => handleInputChange('unionAffiliation', e.target.value)}
-                placeholder="e.g., BDO Employees Association"
-              />
+              <Select onValueChange={(value) => handleInputChange('unionAffiliation', value)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select union affiliation" />
+                </SelectTrigger>
+                <SelectContent>
+                  {unionAffiliations.map((affiliation) => (
+                    <SelectItem key={affiliation} value={affiliation}>
+                      {affiliation}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             <div>

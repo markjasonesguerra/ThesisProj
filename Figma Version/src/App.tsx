@@ -35,6 +35,11 @@ export type User = {
   digitalId: string;
   qrCode: string;
   address?: string;
+  addressLine1?: string;
+  addressLine2?: string;
+  city?: string;
+  province?: string;
+  postalCode?: string;
   dateOfBirth?: string;
   placeOfBirth?: string;
   maritalStatus?: string;
@@ -99,6 +104,11 @@ export default function App() {
     digitalId: 'ALU-BDO-2024-001234',
     qrCode: 'ALU001234',
     address: '123 Rizal Street, Makati City, Metro Manila',
+    addressLine1: '123 Rizal Street',
+    addressLine2: 'Brgy. Poblacion',
+    city: 'Makati City',
+    province: 'Metro Manila',
+    postalCode: '1210',
     dateOfBirth: '1985-06-15',
     placeOfBirth: 'Manila, Philippines',
     maritalStatus: 'Married',
@@ -137,6 +147,11 @@ export default function App() {
     digitalId: 'ALU-MET-2024-002456',
     qrCode: 'ALU002456',
     address: '456 Quezon Avenue, Quezon City, Metro Manila',
+    addressLine1: '456 Quezon Avenue',
+    addressLine2: 'Brgy. Santo Cristo',
+    city: 'Quezon City',
+    province: 'Metro Manila',
+    postalCode: '1100',
     dateOfBirth: '1990-08-22',
     placeOfBirth: 'Quezon City, Philippines',
     maritalStatus: 'Single',
@@ -190,6 +205,10 @@ export default function App() {
         unionPosition: 'Member',
         phone: loginMethod === 'google' ? '+63 917 111 2222' : '+63 918 333 4444',
         address: '123 Social Login Street, Digital City, Metro Manila',
+        addressLine1: '123 Social Login Street',
+        city: 'Digital City',
+        province: 'Metro Manila',
+        postalCode: '1234',
         dateOfBirth: loginMethod === 'google' ? '1990-05-15' : '1988-08-22',
         placeOfBirth: 'Manila, Philippines',
         maritalStatus: 'Single',
