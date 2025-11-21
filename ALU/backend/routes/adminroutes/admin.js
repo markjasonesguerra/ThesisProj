@@ -27,6 +27,7 @@ import registerEventsRoutes from './events.js';
 import registerReportsRoutes from './reports.js';
 import registerTopBarRoutes from './topbar.js';
 import registerQuickSearchRoutes from './quicksearch.js';
+import registerAuthRoutes from './auth.js';
 
 const router = express.Router();
 
@@ -64,6 +65,7 @@ registerEventsRoutes(router);
 registerReportsRoutes(router);
 registerTopBarRoutes(router);
 registerQuickSearchRoutes(router);
+registerAuthRoutes(router);
 
 const loadRegistrationQueue = async () => {
   const rows = await runQuery(`

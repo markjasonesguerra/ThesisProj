@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import PropTypes from "prop-types";
 import {
   Bell,
@@ -7,8 +8,13 @@ import {
   Sparkles,
   Menu,
   UserCircle,
+  LogOut,
+  Settings,
+  User,
+  X,
 } from "lucide-react";
 import client from "../../src/api/client";
+import PasswordRequirements from "./PasswordRequirements";
 import "../styles/admin-base.css";
 
 const sanitizeEnvText = (value, fallback) => {
@@ -32,6 +38,7 @@ const computeInitials = (name) => {
 };
 
 export default function TopBar({ onToggleSidebar }) {
+  const navigate = useNavigate();
   const defaultAdminName = sanitizeEnvText(process.env.REACT_APP_DEFAULT_ADMIN_NAME, "Admin User");
   const defaultAdminId = sanitizeEnvText(process.env.REACT_APP_DEFAULT_ADMIN_ID, "");
   const MIN_SEARCH_LENGTH = 2;
@@ -64,20 +71,74 @@ export default function TopBar({ onToggleSidebar }) {
     registrations: [],
   });
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [settingsModalOpen, setSettingsModalOpen] = useState(false);
+  const [editForm, setEditForm] = useState({ firstName: "", lastName: "", password: "" });
+  const [editStatus, setEditStatus] = useState(null);
 
   const searchContainerRef = useRef(null);
   const notificationsRef = useRef(null);
+  const profileRef = useRef(null);
   const lastSearchRequestId = useRef(0);
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (notificationsRef.current && !notificationsRef.current.contains(event.target)) {
+        setNotificationsOpen(false);
+      }
+      if (profileRef.current && !profileRef.current.contains(event.target)) {
+        setProfileOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
 
+    // Load user from localStorage
+    const storedUser = localStorage.getItem("adminUser");
+    if (storedUser) {
+      try {
+        const user = JSON.parse(storedUser);
+        const displayName = (user.firstName && user.lastName) 
+          ? `${user.firstName} ${user.lastName}` 
+          : (user.username || user.email || "Admin User");
+          
+        setProfile((prev) => ({
+          ...prev,
+          fullName: displayName,
+          title: user.roles && user.roles.length > 0 ? user.roles.join(", ") : "Admin",
+          initials: computeInitials(displayName),
+        }));
+      } catch (e) {
+        console.error("Failed to parse admin user from storage", e);
+      }
+    }
+
     const fetchOverview = async () => {
       try {
         const params = {};
-        if (defaultAdminId) {
+        
+        // Use the logged-in user's ID if available
+        const currentStoredUser = localStorage.getItem("adminUser");
+        if (currentStoredUser) {
+          try {
+            const currentUser = JSON.parse(currentStoredUser);
+            if (currentUser.id) {
+              params.adminId = currentUser.id;
+            }
+          } catch (e) {
+            // ignore parse error
+          }
+        }
+
+        if (!params.adminId && defaultAdminId) {
           params.adminId = defaultAdminId;
         }
+        
         const response = await client.get("/api/admin/topbar/overview", { params });
         if (!isMounted) return;
 
@@ -264,6 +325,40 @@ export default function TopBar({ onToggleSidebar }) {
     </div>
   );
 
+  const handleLogout = () => {
+    localStorage.removeItem("token");
+    localStorage.removeItem("adminUser");
+    navigate("/admin/login");
+  };
+
+  const openSettings = () => {
+    setProfileOpen(false);
+    const names = profile.fullName.split(' ');
+    setEditForm({
+      firstName: names[0] || "",
+      lastName: names.slice(1).join(' ') || "",
+      password: ""
+    });
+    setEditStatus(null);
+    setSettingsModalOpen(true);
+  };
+
+  const handleSaveSettings = async (e) => {
+    e.preventDefault();
+    setEditStatus({ type: 'info', text: 'Saving...' });
+    try {
+      await client.put('/api/admin/auth/profile', editForm);
+      setEditStatus({ type: 'success', text: 'Profile updated successfully.' });
+      setProfile(prev => ({
+        ...prev,
+        fullName: `${editForm.firstName} ${editForm.lastName}`.trim()
+      }));
+      setTimeout(() => setSettingsModalOpen(false), 1500);
+    } catch (err) {
+      setEditStatus({ type: 'error', text: err.response?.data?.message || 'Failed to update profile.' });
+    }
+  };
+
   return (
     <header className="admin-topbar">
       <button
@@ -353,14 +448,109 @@ export default function TopBar({ onToggleSidebar }) {
             </div>
           ) : null}
         </button>
-        <div className="admin-topbar__profile">
+        <div 
+          className="admin-topbar__profile"
+          onClick={() => setProfileOpen(!profileOpen)}
+          ref={profileRef}
+        >
           <UserCircle size={32} />
           <div>
             <strong>{profile.fullName}</strong>
-            <span>{profile.title}</span>
           </div>
+          {profileOpen && (
+            <div className="admin-profile-dropdown">
+              <div className="admin-profile-dropdown__header">
+                <strong>{profile.fullName}</strong>
+                <span>{profile.title}</span>
+              </div>
+              <button className="admin-profile-dropdown__item" onClick={openSettings}>
+                <User size={16} />
+                My Profile
+              </button>
+              <button className="admin-profile-dropdown__item" onClick={openSettings}>
+                <Settings size={16} />
+                Settings
+              </button>
+              <div className="admin-profile-dropdown__divider" />
+              <button 
+                className="admin-profile-dropdown__item is-danger" 
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleLogout();
+                }}
+              >
+                <LogOut size={16} />
+                Sign Out
+              </button>
+            </div>
+          )}
         </div>
       </div>
+      {settingsModalOpen && (
+        <div className="admin-settings-modal">
+          <div className="admin-settings-modal__content">
+            <div className="admin-settings-modal__header">
+              <h3>Edit Profile</h3>
+              <button
+                className="admin-settings-modal__close"
+                onClick={() => setSettingsModalOpen(false)}
+                aria-label="Close"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <form onSubmit={handleSaveSettings}>
+              <div className="admin-settings-modal__body">
+                <div className="admin-settings-modal__field">
+                  <label>First Name</label>
+                  <input
+                    type="text"
+                    value={editForm.firstName}
+                    onChange={(e) => setEditForm({ ...editForm, firstName: e.target.value })}
+                    required
+                  />
+                </div>
+                <div className="admin-settings-modal__field">
+                  <label>Last Name</label>
+                  <input
+                    type="text"
+                    value={editForm.lastName}
+                    onChange={(e) => setEditForm({ ...editForm, lastName: e.target.value })}
+                    required
+                  />
+                </div>
+                <div className="admin-settings-modal__field">
+                  <label>Password</label>
+                  <input
+                    type="password"
+                    value={editForm.password}
+                    onChange={(e) => setEditForm({ ...editForm, password: e.target.value })}
+                    placeholder="Leave blank to keep unchanged"
+                  />
+                  {editForm.password && <PasswordRequirements password={editForm.password} />}
+                </div>
+                {editStatus && (
+                  <div className={`admin-settings-modal__status admin-settings-modal__status--${editStatus.type}`}>
+                    {editStatus.text}
+                  </div>
+                )}
+              </div>
+              <div className="admin-settings-modal__footer">
+                <button
+                  type="button"
+                  className="admin-settings-modal__cancel"
+                  onClick={() => setSettingsModalOpen(false)}
+                >
+                  Cancel
+                </button>
+                <button type="submit" className="admin-settings-modal__save">
+                  Save Changes
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </header>
   );
 }

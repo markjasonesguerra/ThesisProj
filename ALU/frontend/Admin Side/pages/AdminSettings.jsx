@@ -17,6 +17,7 @@ import "../styles/admin-base.css";
 
 import client from "../../src/api/client";
 import ConfidenceBar from "../components/ai/ConfidenceBar";
+import PasswordRequirements from "../components/PasswordRequirements";
 
 const ADMIN_STATUS_OPTIONS = ["active", "invited", "suspended", "disabled"];
 
@@ -137,6 +138,22 @@ const normalizeRollouts = (rollouts = []) => {
   });
 };
 
+const validatePassword = (password) => {
+  if (!password || password.length < 8) {
+    return "Password must be at least 8 characters long.";
+  }
+  if (!/[A-Z]/.test(password)) {
+    return "Password must contain at least one uppercase letter.";
+  }
+  if (!/[a-z]/.test(password)) {
+    return "Password must contain at least one lowercase letter.";
+  }
+  if (!/[^A-Za-z0-9]/.test(password)) {
+    return "Password must contain at least one special character.";
+  }
+  return null;
+};
+
 export default function AdminSettings() {
   const [activeTab, setActiveTab] = useState("user-management");
   const [systemSettings, setSystemSettings] = useState({});
@@ -180,12 +197,15 @@ export default function AdminSettings() {
     });
   };
 
-  const applyAiSettingsPayload = (settings) => {
+  const applyAiSettingsPayload = (settings, options = {}) => {
+    const { resetMessage = true } = options;
     setAiAutomation(normalizeAutomationControls(settings?.automationControls));
     setAiMetrics(normalizeMetrics(settings?.metrics));
     setAiModelRollouts(normalizeRollouts(settings?.modelRollouts));
     setAiDirty(false);
-    setAiSuccessMessage(null);
+    if (resetMessage) {
+      setAiSuccessMessage(null);
+    }
   };
 
   const loadAdminUsers = async () => {
@@ -202,21 +222,25 @@ export default function AdminSettings() {
   };
 
   const loadAiSettings = async () => {
+    let succeeded = false;
     try {
       setAiLoading(true);
       setAiError(null);
       setAiSuccessMessage(null);
       const response = await client.get("/api/admin/ai/settings");
       applyAiSettingsPayload(response.data?.settings ?? {});
+      succeeded = true;
     } catch (err) {
       setAiError(err?.response?.data?.message ?? "Unable to load AI settings");
       setAiAutomation(buildAiAutomationDefaults());
       setAiModelRollouts(buildAiRolloutDefaults());
       setAiMetrics(buildAiMetricsDefaults());
       setAiDirty(false);
+      succeeded = false;
     } finally {
       setAiLoading(false);
     }
+    return succeeded;
   };
 
   const openCreateAdminModal = () => {
@@ -312,9 +336,12 @@ export default function AdminSettings() {
       return;
     }
 
-    if (adminModalMode === "create" && (!adminForm.password || adminForm.password.length < 8)) {
-      setAdminModalError("Password must be at least 8 characters long.");
-      return;
+    if (adminModalMode === "create") {
+      const passwordError = validatePassword(adminForm.password);
+      if (passwordError) {
+        setAdminModalError(passwordError);
+        return;
+      }
     }
 
     const payload = {
@@ -483,12 +510,17 @@ export default function AdminSettings() {
       setAiSaving(true);
       setAiError(null);
       setAiSuccessMessage(null);
-      await client.put("/api/admin/ai/settings", {
+      const response = await client.put("/api/admin/ai/settings", {
         settings: {
           automationControls: aiAutomation,
         },
       });
-      setAiDirty(false);
+      const nextSettings = response.data?.settings;
+      if (nextSettings) {
+        applyAiSettingsPayload(nextSettings, { resetMessage: false });
+      } else {
+        setAiDirty(false);
+      }
       setAiSuccessMessage("AI settings published");
     } catch (err) {
       setAiError(err?.response?.data?.message ?? "Unable to publish AI settings");
@@ -498,7 +530,10 @@ export default function AdminSettings() {
   };
 
   const handleAiSyncModels = async () => {
-    await loadAiSettings();
+    const synced = await loadAiSettings();
+    if (synced) {
+      setAiSuccessMessage("AI settings synced with database");
+    }
   };
 
   const aiCoverageAverage = useMemo(() => {
@@ -1118,13 +1153,6 @@ export default function AdminSettings() {
                         </td>
                       </tr>
                     ) : null}
-                    {!aiLoading && !aiModelRollouts.length ? (
-                      <tr>
-                        <td colSpan={4}>
-                          <div className="admin-empty">No model rollout data available.</div>
-                        </td>
-                      </tr>
-                    ) : null}
                     {aiModelRollouts.map((model) => {
                       const capabilityList = model.capabilities ?? [];
                       const coverage = Number(model.coverage ?? 0);
@@ -1241,6 +1269,7 @@ export default function AdminSettings() {
                         required
                         disabled={adminModalSaving}
                       />
+                      {adminForm.password && <PasswordRequirements password={adminForm.password} />}
                       <small>The admin will be prompted to change this password on first login.</small>
                     </div>
                   ) : (

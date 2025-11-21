@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import PropTypes from "prop-types";
 import {
   LayoutDashboard,
@@ -30,6 +31,20 @@ const navItems = [
 ];
 
 export default function AdminSidebar({ active, onNavigate }) {
+  const [userRoles, setUserRoles] = useState([]);
+
+  useEffect(() => {
+    const storedUser = localStorage.getItem("adminUser");
+    if (storedUser) {
+      try {
+        const user = JSON.parse(storedUser);
+        setUserRoles(user.roles || []);
+      } catch (e) {
+        console.error("Failed to parse admin user", e);
+      }
+    }
+  }, []);
+
   return (
     <aside className="admin-sidebar">
       <div className="admin-sidebar__header">
@@ -38,6 +53,9 @@ export default function AdminSidebar({ active, onNavigate }) {
       </div>
       <nav className="admin-sidebar__nav">
         {navItems.map((item) => {
+          if (item.id === "settings" && !userRoles.includes("SUPER_ADMIN")) {
+            return null;
+          }
           const Icon = item.icon;
           const isActive = item.id === active;
           return (

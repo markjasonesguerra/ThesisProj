@@ -8,4 +8,9 @@ const client = axios.create({
   },
 });
 
+const token = localStorage.getItem('adminToken');
+if (token) {
+  client.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+}
+
 export default client;
