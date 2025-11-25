@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeft,
@@ -20,6 +20,7 @@ import { mockMembers } from "./mockData";
 import { mockAITickets } from "../components/ai/mockAiData";
 import { getAdminMember } from "../../src/api/admin";
 import client from "../../src/api/client";
+import { exportMembershipForm } from "../utils/exportMembershipPdf";
 
 const formatDate = (value, options) => {
   if (!value) return "—";
@@ -66,6 +67,7 @@ export default function MemberProfile() {
   const [member, setMember] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [exportingPdf, setExportingPdf] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -140,6 +142,22 @@ export default function MemberProfile() {
     ];
   }, [member]);
 
+  const handleExportPdf = useCallback(async () => {
+    if (!member || exportingPdf) return;
+    try {
+      setExportingPdf(true);
+      await exportMembershipForm(member);
+    } catch (pdfError) {
+      console.error("Failed to export membership form", pdfError);
+      setError(
+        pdfError.message ??
+          "Unable to export PDF. Ensure the membership form template exists in public/assets/membership-form-template.png."
+      );
+    } finally {
+      setExportingPdf(false);
+    }
+  }, [member, exportingPdf]);
+
   if (loading) {
     return (
       <div className="admin-page admin-stack-lg">
@@ -187,8 +205,13 @@ export default function MemberProfile() {
           >
             <CreditCard size={16} /> Issue ID
           </button>
-          <button type="button" className="admin-button is-primary" onClick={() => window.print()}>
-            <Download size={16} /> Export PDF
+          <button
+            type="button"
+            className="admin-button is-primary"
+            onClick={handleExportPdf}
+            disabled={exportingPdf}
+          >
+            <Download size={16} /> {exportingPdf ? "Generating..." : "Export PDF"}
           </button>
         </div>
       </header>
